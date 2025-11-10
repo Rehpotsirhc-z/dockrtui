@@ -310,8 +310,8 @@ impl ShellPopup {
 
     pub fn on_key(&mut self, key: KeyEvent) -> Result<ShellEvent> {
         match key.code {
-            // close with Esc OR 'q'
-            KeyCode::Esc | KeyCode::Char('q') => return Ok(ShellEvent::Close),
+            // close with Esc
+            KeyCode::Esc => return Ok(ShellEvent::Close),
 
             KeyCode::Enter => {
                 let line = self.input.clone();
@@ -466,7 +466,7 @@ impl ShellPopup {
         let sh = match self.shell { ShellKind::Sh => "sh", ShellKind::Bash => "bash" };
         let hint = Line::from(vec![
             Span::styled(
-                "enter: run  |  esc/q: close  |  ↑/↓: history  |  PgUp/PgDn: scroll  |  ctrl-l: clear  |  Tab/⇧Tab: cd autocomplete",
+                "enter: run  |  esc: close  |  type `exit` to quit shell  |  ↑/↓: history  |  PgUp/PgDn: scroll  |  ctrl-l: clear  |  Tab/⇧Tab: cd autocomplete",
                 Style::default().fg(self.theme.muted),
             ),
             Span::raw("   "),
