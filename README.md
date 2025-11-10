@@ -5,6 +5,15 @@ Because managing containers shouldn’t feel like typing spells in Bash.
 
 ---
 
+<p align="center">
+  <video src="https://nextcloud.orbitnet.fr/s/Ws72Zga28dnDX88/download" width="800" controls></video>
+</p>
+
+> 🎥 *See DockrTUI in action!*  
+> Browse containers, networks & compose projects at lightning speed — all from your terminal.
+
+---
+
 ## 🚀 Features
 
 - **Containers, Images, Networks & Compose** — all in one place  
