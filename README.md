@@ -6,7 +6,13 @@ Because managing containers shouldn’t feel like typing spells in Bash.
 ---
 
 <p align="center">
-  <video src="https://nextcloud.orbitnet.fr/s/Ws72Zga28dnDX88/download" width="800" controls></video>
+  <video
+    src="https://github.com/user-attachments/assets/2ea68c8f-1e4c-4efc-a7c8-4e34972a6928"
+    width="900"
+    controls
+  >
+    Your browser does not support the video tag.
+  </video>
 </p>
 
 > 🎥 *See DockrTUI in action!*  
