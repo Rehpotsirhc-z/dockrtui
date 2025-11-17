@@ -138,11 +138,7 @@ impl DockerClient {
     }
 
     pub async fn remove_image(&self, id: &str, force: bool, noprune: bool) -> Result<()> {
-        let opts = RemoveImageOptions {
-            force,
-            noprune,
-            ..Default::default()
-        };
+        let opts = RemoveImageOptions { force, noprune };
         let _ = self.inner.remove_image(id, Some(opts), None).await?;
         Ok(())
     }

@@ -113,10 +113,10 @@ impl Ui {
         self.networks.on_tick();
         self.compose.on_tick();
 
-        if self.stats.visible {
-            if let Some(id) = self.containers.selected_id() {
-                self.stats.attach(&id);
-            }
+        if self.stats.visible
+            && let Some(id) = self.containers.selected_id()
+        {
+            self.stats.attach(&id);
         }
 
         self.logs.on_tick();

@@ -391,7 +391,7 @@ impl LogsPane {
 
     fn save_to_tmp_filtered(&self) -> Result<PathBuf> {
         let (filtered, _total) = self.filtered_view();
-        self.save_lines(&filtered.iter().cloned().collect::<Vec<_>>())
+        self.save_lines(&filtered.to_vec())
     }
 
     fn save_lines(&self, lines: &[String]) -> Result<PathBuf> {

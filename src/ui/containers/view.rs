@@ -291,7 +291,7 @@ impl ContainersView {
                         let name = c
                             .names
                             .as_ref()
-                            .and_then(|v| v.get(0))
+                            .and_then(|v| v.first())
                             .cloned()
                             .unwrap_or_else(|| id.clone());
                         let state = c.state.as_ref().map(|s| s.to_string());
@@ -376,7 +376,7 @@ impl ContainersView {
                         let name = c
                             .names
                             .as_ref()
-                            .and_then(|v| v.get(0))
+                            .and_then(|v| v.first())
                             .cloned()
                             .unwrap_or_else(|| id.clone());
                         let running = matches!(
@@ -473,7 +473,7 @@ impl ContainersView {
                         let name = c
                             .names
                             .as_ref()
-                            .and_then(|v| v.get(0))
+                            .and_then(|v| v.first())
                             .cloned()
                             .unwrap_or_else(|| id.clone());
                         Some((id, name))
@@ -495,17 +495,16 @@ impl ContainersView {
         self.tick = self.tick.wrapping_add(1);
 
         // If no animation is active, start the next queued action (start/stop)
-        if self.anim.is_none() {
-            if let Some((kind, id, name)) = self.queue.pop_front() {
-                if let Ok(anim) = futures_lite::future::block_on(actions::launch_action(
-                    self.docker.clone(),
-                    kind,
-                    id,
-                    name,
-                )) {
-                    self.anim = Some(anim);
-                }
-            }
+        if self.anim.is_none()
+            && let Some((kind, id, name)) = self.queue.pop_front()
+            && let Ok(anim) = futures_lite::future::block_on(actions::launch_action(
+                self.docker.clone(),
+                kind,
+                id,
+                name,
+            ))
+        {
+            self.anim = Some(anim);
         }
 
         if let Some(mut anim) = self.anim.take() {
@@ -583,7 +582,7 @@ impl ContainersView {
         let name = row
             .names
             .as_ref()
-            .and_then(|v| v.get(0))
+            .and_then(|v| v.first())
             .cloned()
             .unwrap_or_else(|| id.to_string());
         let state = row.state.as_ref().map(|s| s.to_string());
@@ -687,7 +686,7 @@ impl ContainersView {
             let name_raw = c
                 .names
                 .as_ref()
-                .and_then(|v| v.get(0))
+                .and_then(|v| v.first())
                 .cloned()
                 .unwrap_or_default();
             let name = if self.selected_ids.contains(id) {
@@ -985,7 +984,7 @@ impl ContainersView {
             let name = c
                 .names
                 .as_ref()
-                .and_then(|v| v.get(0))
+                .and_then(|v| v.first())
                 .cloned()
                 .unwrap_or_default();
             let image = c.image.clone().unwrap_or_default();
@@ -1052,7 +1051,7 @@ fn match_visible(
     let name = c
         .names
         .as_ref()
-        .and_then(|v| v.get(0))
+        .and_then(|v| v.first())
         .cloned()
         .unwrap_or_default()
         .to_lowercase();
@@ -1127,7 +1126,7 @@ fn match_visible(
 fn key_name(c: &ContainerSummary) -> String {
     c.names
         .as_ref()
-        .and_then(|v| v.get(0))
+        .and_then(|v| v.first())
         .cloned()
         .unwrap_or_default()
         .to_lowercase()
@@ -1189,17 +1188,16 @@ fn format_inspect(name: &str, ins: &bollard::models::ContainerInspectResponse) -
         s.push_str(&format!("Finished: {finished}\n"));
     }
 
-    if let Some(cfg) = ins.config.as_ref() {
-        if let Some(env) = cfg.env.as_ref() {
-            if !env.is_empty() {
-                s.push_str("\n## Env\n");
-                for e in env.iter().take(40) {
-                    s.push_str(&format!("- {e}\n"));
-                }
-                if env.len() > 40 {
-                    s.push_str(&format!("… (+{} env)\n", env.len() - 40));
-                }
-            }
+    if let Some(cfg) = ins.config.as_ref()
+        && let Some(env) = cfg.env.as_ref()
+        && !env.is_empty()
+    {
+        s.push_str("\n## Env\n");
+        for e in env.iter().take(40) {
+            s.push_str(&format!("- {e}\n"));
+        }
+        if env.len() > 40 {
+            s.push_str(&format!("… (+{} env)\n", env.len() - 40));
         }
     }
 
@@ -1216,35 +1214,35 @@ fn format_inspect(name: &str, ins: &bollard::models::ContainerInspectResponse) -
         }
     }
 
-    if let Some(mounts) = ins.mounts.as_ref() {
-        if !mounts.is_empty() {
-            s.push_str("\n## Mounts\n");
-            for m in mounts {
-                let src = m.source.as_deref().unwrap_or("-");
-                let dst = m.destination.as_deref().unwrap_or("-");
-                let typ = m
-                    .typ
-                    .as_ref()
-                    .map(|t| format!("{:?}", t))
-                    .unwrap_or_else(|| "-".to_string());
-                s.push_str(&format!("- [{typ}] {src} → {dst}\n"));
-            }
+    if let Some(mounts) = ins.mounts.as_ref()
+        && !mounts.is_empty()
+    {
+        s.push_str("\n## Mounts\n");
+        for m in mounts {
+            let src = m.source.as_deref().unwrap_or("-");
+            let dst = m.destination.as_deref().unwrap_or("-");
+            let typ = m
+                .typ
+                .as_ref()
+                .map(|t| format!("{:?}", t))
+                .unwrap_or_else(|| "-".to_string());
+            s.push_str(&format!("- [{typ}] {src} → {dst}\n"));
         }
     }
 
-    if let Some(ps) = ins.network_settings.as_ref().and_then(|n| n.ports.as_ref()) {
-        if !ps.is_empty() {
-            s.push_str("\n## Ports\n");
-            for (k, vs) in ps {
-                if let Some(vs) = vs {
-                    for v in vs {
-                        let host = v.host_ip.as_deref().unwrap_or("0.0.0.0");
-                        let hp = v.host_port.as_deref().unwrap_or("?");
-                        s.push_str(&format!("- {host}:{hp} -> {k}\n"));
-                    }
-                } else {
-                    s.push_str(&format!("- {k}\n"));
+    if let Some(ps) = ins.network_settings.as_ref().and_then(|n| n.ports.as_ref())
+        && !ps.is_empty()
+    {
+        s.push_str("\n## Ports\n");
+        for (k, vs) in ps {
+            if let Some(vs) = vs {
+                for v in vs {
+                    let host = v.host_ip.as_deref().unwrap_or("0.0.0.0");
+                    let hp = v.host_port.as_deref().unwrap_or("?");
+                    s.push_str(&format!("- {host}:{hp} -> {k}\n"));
                 }
+            } else {
+                s.push_str(&format!("- {k}\n"));
             }
         }
     }

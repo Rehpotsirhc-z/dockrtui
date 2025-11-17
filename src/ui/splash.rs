@@ -458,7 +458,7 @@ fn render_space_scene(
         };
 
         // quelques étoiles colorées
-        let colored = (x.wrapping_mul(1315423911) ^ y.wrapping_mul(2654435761)) % 7 == 0;
+        let colored = (x.wrapping_mul(1315423911) ^ y.wrapping_mul(2654435761)).is_multiple_of(7);
         let col = if colored {
             let hue =
                 ((x as f32 / (w.max(1) as f32) + (tick as f32) * 0.002).fract() * 360.0) % 360.0;
@@ -581,7 +581,7 @@ fn fancy_bar_line(width: usize, progress: f32, tick: u64, c1: Color, c2: Color) 
         };
         let base = mix(c1, c2, t);
 
-        let shine_dist = (i as isize - shine as isize).abs() as usize;
+        let shine_dist = (i as isize - shine as isize).unsigned_abs();
         let shine_boost = (3usize.saturating_sub(shine_dist)) as f32 / 3.0;
 
         let ch = if i < fill { '█' } else { '░' };

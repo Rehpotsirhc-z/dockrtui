@@ -124,8 +124,7 @@ pub fn render_rocket_scene_vertical(
                 + ((end_off_top - start_on_ground as isize) as f32 * pe) as isize
         }
         ActionKind::Stopping => {
-            (end_off_top as isize)
-                + ((start_on_ground as isize - end_off_top as isize) as f32 * pe) as isize
+            end_off_top + ((start_on_ground as isize - end_off_top) as f32 * pe) as isize
         }
     };
 
@@ -171,7 +170,7 @@ pub fn render_rocket_scene_vertical(
             continue;
         }
         for dx in [-2isize, 0, 2] {
-            let jitter = (((tick + (dy as u64) + (dx.abs() as u64)) % 3) as isize - 1) as isize;
+            let jitter = ((tick + (dy as u64) + (dx.unsigned_abs() as u64)) % 3) as isize - 1;
             let xx = (x_center + dx + jitter).clamp(0, (w - 1) as isize) as usize;
             let ch = match ((dy as usize) + flicker) % 4 {
                 0 => '╽',
@@ -195,7 +194,7 @@ pub fn render_rocket_scene_vertical(
                 y = y.saturating_sub(((tick % 6) / 3) as isize);
                 let xx = (x_center + dx).clamp(0, (w - 1) as isize) as usize;
                 if y >= 1 && (y as usize) < ground_y {
-                    buf[y as usize][xx] = if (tick + xx as u64) % 2 == 0 {
+                    buf[y as usize][xx] = if (tick + xx as u64).is_multiple_of(2) {
                         '·'
                     } else {
                         ','
@@ -211,9 +210,9 @@ pub fn render_rocket_scene_vertical(
         let start = x_left.saturating_sub(spread / 2);
         let end = (x_left + rw + spread / 2).min(w);
         for x in start..end {
-            if (x + tick as usize) % 2 == 0 {
+            if (x + tick as usize).is_multiple_of(2) {
                 let y = ground_y.saturating_sub(1);
-                buf[y][x] = if (x + (tick as usize / 2)) % 3 == 0 {
+                buf[y][x] = if (x + (tick as usize / 2)).is_multiple_of(3) {
                     '~'
                 } else {
                     '='

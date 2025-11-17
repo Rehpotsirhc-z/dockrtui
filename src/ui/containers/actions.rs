@@ -98,8 +98,8 @@ pub async fn launch_action(
                                 if has_health {
                                     // wait for healthy
                                     loop {
-                                        if let Ok(ins2) = docker.inspect(&id).await {
-                                            if let Some(h) = ins2.state.as_ref().and_then(|s| s.health.as_ref()) {
+                                        if let Ok(ins2) = docker.inspect(&id).await
+                                            && let Some(h) = ins2.state.as_ref().and_then(|s| s.health.as_ref()) {
                                                 if matches!(h.status, Some(ref s) if s.to_string().to_lowercase() == "healthy") {
                                                     let _ = tx.send(BarUpdate { pct: 0.98, phase: BarPhase::WaitingHealthy });
                                                     break;
@@ -107,7 +107,6 @@ pub async fn launch_action(
                                                     let _ = tx.send(BarUpdate { pct: 0.90, phase: BarPhase::WaitingHealthy });
                                                 }
                                             }
-                                        }
                                         tokio::time::sleep(Duration::from_millis(240)).await;
                                     }
                                 } else {

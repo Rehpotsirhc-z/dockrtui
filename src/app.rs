@@ -122,25 +122,25 @@ pub async fn run() -> Result<()> {
             .unwrap_or(Duration::from_millis(0));
 
         // input
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                match route {
-                    Route::Splash => {
-                        // 'q' = quit, 'Esc'/'Enter' = skip splash
-                        if matches!(key.code, KeyCode::Char('q')) {
-                            break 'outer;
-                        }
-                        splash.on_key(key);
+        if event::poll(timeout)?
+            && let Event::Key(key) = event::read()?
+        {
+            match route {
+                Route::Splash => {
+                    // 'q' = quit, 'Esc'/'Enter' = skip splash
+                    if matches!(key.code, KeyCode::Char('q')) {
+                        break 'outer;
                     }
-                    Route::Main => {
-                        if let Some(u) = ui.as_mut() {
-                            // 1) let the UI handle the key (popups, shell, etc.)
-                            u.on_key(key).await?;
+                    splash.on_key(key);
+                }
+                Route::Main => {
+                    if let Some(u) = ui.as_mut() {
+                        // 1) let the UI handle the key (popups, shell, etc.)
+                        u.on_key(key).await?;
 
-                            // 2) Quit ONLY if 'q' and no modal is open
-                            if matches!(key.code, KeyCode::Char('q')) && !u.is_modal_open() {
-                                break 'outer;
-                            }
+                        // 2) Quit ONLY if 'q' and no modal is open
+                        if matches!(key.code, KeyCode::Char('q')) && !u.is_modal_open() {
+                            break 'outer;
                         }
                     }
                 }
@@ -154,13 +154,13 @@ pub async fn run() -> Result<()> {
                     splash.on_tick();
 
                     // Try to retrieve the ready UI (non-blocking)
-                    if ui.is_none() {
-                        if let Ok(res) = ui_rx.try_recv() {
-                            match res {
-                                Ok(u) => ui = Some(u),
-                                Err(_e) => {
-                                    // Failure is displayed in the splash; stay on splash
-                                }
+                    if ui.is_none()
+                        && let Ok(res) = ui_rx.try_recv()
+                    {
+                        match res {
+                            Ok(u) => ui = Some(u),
+                            Err(_e) => {
+                                // Failure is displayed in the splash; stay on splash
                             }
                         }
                     }

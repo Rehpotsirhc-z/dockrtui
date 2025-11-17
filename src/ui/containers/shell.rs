@@ -303,10 +303,7 @@ impl ShellPopup {
             escape_for_shell(&pat)
         );
 
-        let out = match self.exec_raw_in_container(&script) {
-            Ok(s) => s,
-            Err(_) => String::new(),
-        };
+        let out = self.exec_raw_in_container(&script).unwrap_or_default();
 
         let mut items: Vec<String> = out
             .lines()

@@ -44,7 +44,7 @@ pub fn fancy_bar_line(
             i as f32 / (width - 1) as f32
         };
         let base = mix(c1, c2, t);
-        let shine_dist = (i as isize - shine as isize).abs() as usize;
+        let shine_dist = (i as isize - shine as isize).unsigned_abs();
         let shine_boost = (3usize.saturating_sub(shine_dist)) as f32 / 3.0;
 
         let ch = if i < fill { '█' } else { '░' };

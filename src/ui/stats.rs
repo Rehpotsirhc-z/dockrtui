@@ -116,8 +116,8 @@ impl StatsPane {
         self.stop_tx = Some(stop_tx.clone());
 
         tokio::spawn(async move {
-            match docker.stats_stream_live(&id).await {
-                Ok(mut s) => loop {
+            if let Ok(mut s) = docker.stats_stream_live(&id).await {
+                loop {
                     tokio::select! {
                         _ = stop_rx.recv() => break,
                         item = s.next() => {
@@ -127,8 +127,7 @@ impl StatsPane {
                             }
                         }
                     }
-                },
-                Err(_) => {}
+                }
             }
         });
     }
