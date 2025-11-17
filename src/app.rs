@@ -7,7 +7,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{backend::CrosstermBackend, Terminal, restore};
 use tokio::sync::mpsc;
 
 use crate::{docker::DockerClient, ui::Ui};
@@ -41,6 +41,7 @@ pub async fn run() -> Result<()> {
     }
 
     enable_raw_mode()?;
+    set_panic_hook();
     terminal.clear()?;
 
     // --- Splash + control channel ---
@@ -173,4 +174,12 @@ pub async fn run() -> Result<()> {
     let mut stdout: io::Stdout = std::io::stdout();
     execute!(stdout, LeaveAlternateScreen)?;
     Ok(())
+}
+
+fn set_panic_hook() {
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        restore();
+        hook(panic_info);
+    }));
 }
