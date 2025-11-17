@@ -2,11 +2,11 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
-    Frame,
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
@@ -112,8 +112,12 @@ impl SplashScreen {
     }
 
     pub fn is_ready_to_close(&self) -> bool {
-        if self.fail.is_some() { return false; }
-        if !self.done { return false; }
+        if self.fail.is_some() {
+            return false;
+        }
+        if !self.done {
+            return false;
+        }
         let bar_full = self.progress >= 0.999;
         let hold_ok = self
             .done_at
@@ -178,8 +182,7 @@ impl SplashScreen {
             width: rows[0].width,
             height: banner_height,
         };
-        let banner_par = Paragraph::new(Text::from(banner))
-            .alignment(Alignment::Center);
+        let banner_par = Paragraph::new(Text::from(banner)).alignment(Alignment::Center);
         f.render_widget(banner_par, banner_rect);
 
         // Version in small text (top right corner of global rectangle)
@@ -188,7 +191,9 @@ impl SplashScreen {
             let mut line = Line::default();
             line.spans.push(Span::styled(
                 v,
-                Style::default().fg(self.theme.muted).add_modifier(Modifier::DIM),
+                Style::default()
+                    .fg(self.theme.muted)
+                    .add_modifier(Modifier::DIM),
             ));
             let rect = Rect {
                 x: overlay.x + overlay.width.saturating_sub(8),
@@ -207,25 +212,35 @@ impl SplashScreen {
             self.theme.accent,
             self.theme.accent_alt,
         );
-        let bar = Paragraph::new(pb)
-            .block(Block::default().borders(Borders::ALL).title("initialisation"));
+        let bar = Paragraph::new(pb).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("initialisation"),
+        );
         f.render_widget(bar, rows[1]);
 
         // 4) Hints / errors
         let mut foot = Vec::<Span>::new();
         match &self.fail {
             Some(err) => {
-                foot.push(Span::styled(" init failed: ", Style::default().fg(self.theme.err).add_modifier(Modifier::BOLD)));
+                foot.push(Span::styled(
+                    " init failed: ",
+                    Style::default()
+                        .fg(self.theme.err)
+                        .add_modifier(Modifier::BOLD),
+                ));
                 foot.push(Span::styled(err, Style::default().fg(self.theme.err)));
                 foot.push(Span::raw("  • press q to quit"));
             }
             None => {
-                foot.push(Span::styled(format!(" step: {}", self.label), Style::default().fg(self.theme.fg)));
+                foot.push(Span::styled(
+                    format!(" step: {}", self.label),
+                    Style::default().fg(self.theme.fg),
+                ));
                 foot.push(Span::raw("  • esc/enter: skip  • q: quit"));
             }
         }
-        let foot = Paragraph::new(Line::from(foot))
-            .style(Style::default().fg(self.theme.muted));
+        let foot = Paragraph::new(Line::from(foot)).style(Style::default().fg(self.theme.muted));
         f.render_widget(foot, rows[2]);
     }
 }
@@ -316,13 +331,7 @@ fn glyph8(ch: char) -> &'static [&'static str] {
             "        ",
         ],
         _ => &[
-            "        ",
-            "        ",
-            "        ",
-            "        ",
-            "        ",
-            "        ",
-            "        ",
+            "        ", "        ", "        ", "        ", "        ", "        ", "        ",
             "        ",
         ],
     }
@@ -348,16 +357,29 @@ fn render_big_banner(text: &str, max_w: usize, tick: u64) -> Vec<Line<'static>> 
             let g = glyph8(*ch)[row];
             for (j, c) in g.chars().enumerate() {
                 let x = col_x + j;
-                if x >= max_w { break; }
+                if x >= max_w {
+                    break;
+                }
 
                 // normalized position over total width for gradient
-                let t = if total_w <= 1 { 0.0 } else { x as f32 / (total_w - 1) as f32 };
+                let t = if total_w <= 1 {
+                    0.0
+                } else {
+                    x as f32 / (total_w - 1) as f32
+                };
                 // "wave" of brightness sweeping across
-                let wave = ((t * 6.0 + row as f32 * 0.6 + phase * std::f32::consts::TAU).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
+                let wave = ((t * 6.0 + row as f32 * 0.6 + phase * std::f32::consts::TAU).sin()
+                    * 0.5
+                    + 0.5)
+                    .clamp(0.0, 1.0);
                 let hue = (360.0 * (t + phase)).rem_euclid(360.0);
                 let col = hsv_to_rgb(hue, 0.9, 0.55 + 0.45 * wave);
 
-                let s = if c == ' ' { Span::raw(" ") } else { Span::styled("█", Style::default().fg(col).add_modifier(Modifier::BOLD)) };
+                let s = if c == ' ' {
+                    Span::raw(" ")
+                } else {
+                    Span::styled("█", Style::default().fg(col).add_modifier(Modifier::BOLD))
+                };
                 spans.push(s);
             }
             col_x += glyph_w;
@@ -365,13 +387,17 @@ fn render_big_banner(text: &str, max_w: usize, tick: u64) -> Vec<Line<'static>> 
             // spacing between glyphs
             if i + 1 != chars.len() {
                 for _ in 0..spacing {
-                    if col_x >= max_w { break; }
+                    if col_x >= max_w {
+                        break;
+                    }
                     spans.push(Span::raw(" "));
                     col_x += 1;
                 }
             }
 
-            if col_x >= max_w { break; }
+            if col_x >= max_w {
+                break;
+            }
         }
 
         out.push(Line::from(spans));
@@ -381,7 +407,13 @@ fn render_big_banner(text: &str, max_w: usize, tick: u64) -> Vec<Line<'static>> 
 
 /* ====================== Animated Space ====================== */
 
-fn render_space_scene(w: usize, h: usize, tick: u64, mut seed: u64, _theme: Theme) -> Vec<Line<'static>> {
+fn render_space_scene(
+    w: usize,
+    h: usize,
+    tick: u64,
+    mut seed: u64,
+    _theme: Theme,
+) -> Vec<Line<'static>> {
     // densité étoiles & nébuleuses
     let star_count = (w * h / 42).max(20);
     let nebula_bands = 3;
@@ -397,9 +429,9 @@ fn render_space_scene(w: usize, h: usize, tick: u64, mut seed: u64, _theme: Them
         // bande diagonale sinusoïdale
         for y in 0..h {
             let fy = y as f32 / h.max(1) as f32;
-            let cx = ((fy + (b as f32)*0.18 + t*0.02) * std::f32::consts::TAU).sin();
+            let cx = ((fy + (b as f32) * 0.18 + t * 0.02) * std::f32::consts::TAU).sin();
             let mid = ((w as f32) * (0.5 + 0.4 * cx)) as isize;
-            let thickness = (3 + (3.0 * (fy*std::f32::consts::PI).sin().abs()) as usize) as isize;
+            let thickness = (3 + (3.0 * (fy * std::f32::consts::PI).sin().abs()) as usize) as isize;
             for dx in -thickness..=thickness {
                 let x = (mid + dx).clamp(0, w as isize - 1) as usize;
                 if rows[y][x].0 == ' ' {
@@ -428,7 +460,8 @@ fn render_space_scene(w: usize, h: usize, tick: u64, mut seed: u64, _theme: Them
         // quelques étoiles colorées
         let colored = (x.wrapping_mul(1315423911) ^ y.wrapping_mul(2654435761)) % 7 == 0;
         let col = if colored {
-            let hue = ((x as f32 / (w.max(1) as f32) + (tick as f32)*0.002).fract() * 360.0) % 360.0;
+            let hue =
+                ((x as f32 / (w.max(1) as f32) + (tick as f32) * 0.002).fract() * 360.0) % 360.0;
             Some(hsv_to_rgb(hue, 0.7, 0.9))
         } else {
             Some(Color::Rgb(200, 200, 220))
@@ -442,12 +475,18 @@ fn render_space_scene(w: usize, h: usize, tick: u64, mut seed: u64, _theme: Them
         let period = 160;
         if tick % period < 24 {
             let t = (tick % period) as f32 / 24.0;
-            let mx = ((w as f32) * (0.9 - 0.9 * t)).round().clamp(0.0, (w - 1) as f32) as usize;
+            let mx = ((w as f32) * (0.9 - 0.9 * t))
+                .round()
+                .clamp(0.0, (w - 1) as f32) as usize;
             let my = (h as f32 * (0.15 + 0.7 * t)) as usize % h;
             let c_head = hsv_to_rgb(20.0 + 340.0 * t, 0.9, 1.0);
             rows[my][mx] = ('✱', Some(c_head));
-            if mx + 1 < w { rows[my][mx + 1] = ('•', Some(Color::Rgb(255, 220, 200))); }
-            if mx + 2 < w { rows[my][mx + 2] = ('·', Some(Color::Rgb(220, 180, 160))); }
+            if mx + 1 < w {
+                rows[my][mx + 1] = ('•', Some(Color::Rgb(255, 220, 200)));
+            }
+            if mx + 2 < w {
+                rows[my][mx + 2] = ('·', Some(Color::Rgb(220, 180, 160)));
+            }
         }
     }
 
@@ -459,7 +498,9 @@ fn render_space_scene(w: usize, h: usize, tick: u64, mut seed: u64, _theme: Them
             let mut buf = String::new();
 
             let flush = |spans: &mut Vec<Span>, buf: &mut String, style: &Option<Color>| {
-                if buf.is_empty() { return; }
+                if buf.is_empty() {
+                    return;
+                }
                 match style {
                     Some(c) => spans.push(Span::styled(buf.clone(), Style::default().fg(*c))),
                     None => spans.push(Span::raw(buf.clone())),
@@ -509,12 +550,20 @@ fn fancy_bar_line(width: usize, progress: f32, tick: u64, c1: Color, c2: Color) 
     let width = width.saturating_sub(2);
     let pct = (progress * 100.0).round() as i32;
     let fill = (progress * width as f32).floor() as usize;
-    let shine = if width == 0 { 0 } else { (tick as usize / 2) % width };
+    let shine = if width == 0 {
+        0
+    } else {
+        (tick as usize / 2) % width
+    };
 
     let mix = |a: Color, b: Color, t: f32| -> Color {
         match (a, b) {
             (Color::Rgb(ra, ga, ba), Color::Rgb(rb, gb, bb)) => {
-                let lerp = |x, y| (x as f32 + (y as f32 - x as f32) * t).round().clamp(0.0, 255.0) as u8;
+                let lerp = |x, y| {
+                    (x as f32 + (y as f32 - x as f32) * t)
+                        .round()
+                        .clamp(0.0, 255.0) as u8
+                };
                 Color::Rgb(lerp(ra, rb), lerp(ga, gb), lerp(ba, bb))
             }
             _ => a,
@@ -525,7 +574,11 @@ fn fancy_bar_line(width: usize, progress: f32, tick: u64, c1: Color, c2: Color) 
     spans.push(Span::raw(" "));
 
     for i in 0..width {
-        let t = if width <= 1 { 0.0 } else { i as f32 / (width - 1) as f32 };
+        let t = if width <= 1 {
+            0.0
+        } else {
+            i as f32 / (width - 1) as f32
+        };
         let base = mix(c1, c2, t);
 
         let shine_dist = (i as isize - shine as isize).abs() as usize;
@@ -547,6 +600,9 @@ fn fancy_bar_line(width: usize, progress: f32, tick: u64, c1: Color, c2: Color) 
     }
 
     spans.push(Span::raw(" "));
-    spans.push(Span::styled(format!(" {}% ", pct), Style::default().add_modifier(Modifier::BOLD)));
+    spans.push(Span::styled(
+        format!(" {}% ", pct),
+        Style::default().add_modifier(Modifier::BOLD),
+    ));
     Line::from(spans)
 }

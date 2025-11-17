@@ -5,16 +5,16 @@ use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal, restore};
+use ratatui::{Terminal, backend::CrosstermBackend, restore};
 use tokio::sync::mpsc;
 
-use crate::{docker::DockerClient, ui::Ui};
 use crate::theme::Theme;
+use crate::{docker::DockerClient, ui::Ui};
 
 // Animated splash screen
-use crate::ui::splash::{SplashScreen, SplashEvent};
+use crate::ui::splash::{SplashEvent, SplashScreen};
 
 pub const TERMINAL_MIN_WIDTH: u16 = 70;
 pub const TERMINAL_MIN_HEIGHT: u16 = 28;
@@ -53,7 +53,10 @@ pub async fn run() -> Result<()> {
 
     // --- Asynchronous initialization task ---
     tokio::spawn(async move {
-        let _ = splash_tx.send(SplashEvent::Step { pct: 0.10, label: "Connect to Docker…".into() });
+        let _ = splash_tx.send(SplashEvent::Step {
+            pct: 0.10,
+            label: "Connect to Docker…".into(),
+        });
         let docker = match DockerClient::connect_default().await {
             Ok(d) => d,
             Err(e) => {
@@ -63,19 +66,28 @@ pub async fn run() -> Result<()> {
             }
         };
 
-        let _ = splash_tx.send(SplashEvent::Step { pct: 0.45, label: "Warm-up containers…".into() });
+        let _ = splash_tx.send(SplashEvent::Step {
+            pct: 0.45,
+            label: "Warm-up containers…".into(),
+        });
         if let Err(e) = docker.list_containers(true).await {
             let _ = splash_tx.send(SplashEvent::Fail(format!("list: {e}")));
             let _ = ui_tx.send(Err(e));
             return;
         }
 
-        let _ = splash_tx.send(SplashEvent::Step { pct: 0.70, label: "Build UI state…".into() });
+        let _ = splash_tx.send(SplashEvent::Step {
+            pct: 0.70,
+            label: "Build UI state…".into(),
+        });
         let ui = Ui::new(docker).await;
 
         match ui {
             Ok(ui) => {
-                let _ = splash_tx.send(SplashEvent::Step { pct: 0.95, label: "Final touches…".into() });
+                let _ = splash_tx.send(SplashEvent::Step {
+                    pct: 0.95,
+                    label: "Final touches…".into(),
+                });
                 let _ = splash_tx.send(SplashEvent::Done);
                 let _ = ui_tx.send(Ok(ui));
             }

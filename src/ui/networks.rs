@@ -1,18 +1,18 @@
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
-    Frame,
 };
 
-use crate::{docker::DockerClient, theme::Theme};
 use crate::ui::containers;
+use crate::{docker::DockerClient, theme::Theme};
 use containers::util::{grad_sweep, truncate_middle};
 
 /// Available sort keys for networks
@@ -100,7 +100,8 @@ impl NetworksView {
         let vis_len = self.visible_indices().len();
         if self.state.selected().unwrap_or(0) >= vis_len {
             let len = vis_len.saturating_sub(1);
-            self.state.select(if vis_len == 0 { None } else { Some(len) });
+            self.state
+                .select(if vis_len == 0 { None } else { Some(len) });
         }
         self.last_refresh = Instant::now();
         Ok(())
@@ -196,8 +197,11 @@ impl NetworksView {
             let vis_len = vis.len();
             let cur = self.state.selected().unwrap_or(0);
             if cur >= vis_len {
-                self.state
-                    .select(if vis_len == 0 { None } else { Some(vis_len - 1) });
+                self.state.select(if vis_len == 0 {
+                    None
+                } else {
+                    Some(vis_len - 1)
+                });
             }
             return Ok(());
         }
@@ -377,11 +381,7 @@ impl NetworksView {
                 SortKey::Driver => key_driver(na).cmp(&key_driver(nb)),
                 SortKey::Scope => key_scope(na).cmp(&key_scope(nb)),
             };
-            if self.sort_asc {
-                ord
-            } else {
-                ord.reverse()
-            }
+            if self.sort_asc { ord } else { ord.reverse() }
         });
 
         indices
@@ -409,7 +409,11 @@ impl NetworksView {
             SortKey::Scope => "scope",
         };
         let arrow = if self.sort_asc { "↑" } else { "↓" };
-        let mode = if self.show_builtin { "all" } else { "user-defined" };
+        let mode = if self.show_builtin {
+            "all"
+        } else {
+            "user-defined"
+        };
 
         let mut spans = vec![Span::raw(" ")];
         spans.extend(title_line.spans.clone());
@@ -432,14 +436,12 @@ impl NetworksView {
             Style::default().fg(theme.muted),
         ));
         if just_refreshed {
-            spans.push(
-                Span::styled(
-                    format!(" {spin}"),
-                    Style::default()
-                        .fg(theme.accent)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            );
+            spans.push(Span::styled(
+                format!(" {spin}"),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ));
         }
 
         let header = Paragraph::new(Line::from(spans)).block(theme.block("Networks"));
@@ -449,8 +451,11 @@ impl NetworksView {
         let vis = self.visible_indices();
         let selected_row = self.state.selected().unwrap_or(0);
 
-        let header_row = Row::new(vec!["NAME", "DRIVER", "SCOPE", "ATTACHED", "ID"])
-            .style(Style::default().fg(theme.muted).add_modifier(Modifier::BOLD));
+        let header_row = Row::new(vec!["NAME", "DRIVER", "SCOPE", "ATTACHED", "ID"]).style(
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        );
 
         let rows = vis.iter().enumerate().map(|(i, &idx)| {
             let nw = &self.rows[idx];

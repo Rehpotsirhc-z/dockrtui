@@ -1,10 +1,12 @@
 use anyhow::Result;
-use bollard::secret::ImageSummary;
-use bollard::{Docker, API_DEFAULT_VERSION};
 use bollard::models::ContainerSummary;
 use bollard::query_parameters::{
-    InspectContainerOptions, ListContainersOptions, ListImagesOptions, LogsOptions, RemoveContainerOptionsBuilder, RemoveImageOptions, StartContainerOptionsBuilder, StatsOptionsBuilder, StopContainerOptionsBuilder
+    InspectContainerOptions, ListContainersOptions, ListImagesOptions, LogsOptions,
+    RemoveContainerOptionsBuilder, RemoveImageOptions, StartContainerOptionsBuilder,
+    StatsOptionsBuilder, StopContainerOptionsBuilder,
 };
+use bollard::secret::ImageSummary;
+use bollard::{API_DEFAULT_VERSION, Docker};
 use futures_util::{Stream, StreamExt};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -21,9 +23,14 @@ impl DockerClient {
         Ok(Self { inner })
     }
 
-    pub async fn inspect(&self, id: &str)
-    -> anyhow::Result<bollard::models::ContainerInspectResponse> {
-        Ok(self.inner.inspect_container(id, None::<InspectContainerOptions>).await?)
+    pub async fn inspect(
+        &self,
+        id: &str,
+    ) -> anyhow::Result<bollard::models::ContainerInspectResponse> {
+        Ok(self
+            .inner
+            .inspect_container(id, None::<InspectContainerOptions>)
+            .await?)
     }
 
     pub async fn pause(&self, id: &str) -> Result<()> {
@@ -35,11 +42,12 @@ impl DockerClient {
     }
 
     pub async fn remove(&self, id: &str, force: bool, volumes: bool) -> Result<()> {
-        let opts: bollard::query_parameters::RemoveContainerOptions = RemoveContainerOptionsBuilder::default()
-            .force(force)
-            .v(volumes)
-            .link(false)
-            .build();
+        let opts: bollard::query_parameters::RemoveContainerOptions =
+            RemoveContainerOptionsBuilder::default()
+                .force(force)
+                .v(volumes)
+                .link(false)
+                .build();
         self.inner.remove_container(id, Some(opts)).await?;
         Ok(())
     }
@@ -68,16 +76,14 @@ impl DockerClient {
             ..Default::default()
         };
 
-        let s = self.inner.logs(id, Some(opts)).map(|out| {
-            match out {
-                Ok(bollard::container::LogOutput::StdOut { message })
-                | Ok(bollard::container::LogOutput::StdErr { message })
-                | Ok(bollard::container::LogOutput::Console { message }) => {
-                    Ok(String::from_utf8_lossy(&message).to_string())
-                }
-                Ok(_) => Ok(String::new()),
-                Err(e) => Err(anyhow::anyhow!(e)),
+        let s = self.inner.logs(id, Some(opts)).map(|out| match out {
+            Ok(bollard::container::LogOutput::StdOut { message })
+            | Ok(bollard::container::LogOutput::StdErr { message })
+            | Ok(bollard::container::LogOutput::Console { message }) => {
+                Ok(String::from_utf8_lossy(&message).to_string())
             }
+            Ok(_) => Ok(String::new()),
+            Err(e) => Err(anyhow::anyhow!(e)),
         });
 
         Ok(Box::pin(s))
@@ -91,13 +97,10 @@ impl DockerClient {
             .one_shot(false)
             .build();
 
-        let s = self
-            .inner
-            .stats(id, Some(opts))
-            .map(|it| {
-                it.map_err(|e| anyhow::anyhow!(e))
-                  .and_then(|stat| serde_json::to_value(stat).map_err(|e| anyhow::anyhow!(e)))
-            });
+        let s = self.inner.stats(id, Some(opts)).map(|it| {
+            it.map_err(|e| anyhow::anyhow!(e))
+                .and_then(|stat| serde_json::to_value(stat).map_err(|e| anyhow::anyhow!(e)))
+        });
 
         Ok(Box::pin(s))
     }
@@ -119,7 +122,7 @@ impl DockerClient {
         Ok(())
     }
 
-       // ================== IMAGES ==================
+    // ================== IMAGES ==================
 
     pub async fn list_images(&self, all: bool) -> Result<Vec<ImageSummary>> {
         let opts = ListImagesOptions {

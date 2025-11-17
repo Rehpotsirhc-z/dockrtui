@@ -8,7 +8,10 @@ use tokio::sync::mpsc;
 use crate::docker::DockerClient;
 
 #[derive(Clone, Copy)]
-pub enum ActionKind { Starting, Stopping }
+pub enum ActionKind {
+    Starting,
+    Stopping,
+}
 
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
@@ -54,7 +57,12 @@ pub struct ActionAnim {
     pub done_at: Option<Instant>,
 }
 
-pub async fn launch_action(docker: DockerClient, kind: ActionKind, id: String, name: String) -> Result<ActionAnim> {
+pub async fn launch_action(
+    docker: DockerClient,
+    kind: ActionKind,
+    id: String,
+    name: String,
+) -> Result<ActionAnim> {
     let (tx, rx) = mpsc::unbounded_channel::<BarUpdate>();
 
     let done_flag = Arc::new(AtomicBool::new(false));
@@ -135,7 +143,10 @@ pub async fn launch_action(docker: DockerClient, kind: ActionKind, id: String, n
 
         *res_c.lock().unwrap() = Some(exec_res);
         done_c.store(true, Ordering::Relaxed);
-        let _ = tx.send(BarUpdate { pct: 1.0, phase: BarPhase::Done });
+        let _ = tx.send(BarUpdate {
+            pct: 1.0,
+            phase: BarPhase::Done,
+        });
     });
 
     // Overlay (rocket follows the bar)

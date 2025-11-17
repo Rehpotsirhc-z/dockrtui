@@ -35,13 +35,24 @@ pub fn grad_sweep(text: &str, from: Color, to: Color, phase: f32) -> Line<'stati
 
 /// Tronque une chaîne au milieu en gardant début + fin
 pub fn truncate_middle(s: &str, max: usize) -> String {
-    if s.chars().count() <= max { return s.to_string(); }
-    if max <= 3 { return "...".into(); }
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    if max <= 3 {
+        return "...".into();
+    }
     let keep = max - 3;
     let head = keep / 2;
     let tail = keep - head;
     let mut it = s.chars();
     let start: String = it.by_ref().take(head).collect();
-    let end: String   = s.chars().rev().take(tail).collect::<String>().chars().rev().collect();
+    let end: String = s
+        .chars()
+        .rev()
+        .take(tail)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
     format!("{start}...{end}")
 }
