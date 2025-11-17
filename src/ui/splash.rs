@@ -10,6 +10,7 @@ use ratatui::{
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
+use crate::app::{TERMINAL_MIN_HEIGHT, TERMINAL_MIN_WIDTH};
 use crate::theme::Theme;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -123,8 +124,8 @@ impl SplashScreen {
 
     pub fn draw(&mut self, f: &mut Frame, area: Rect) {
         // centered wide container
-        let w = (area.width * 4 / 5).max(70);
-        let h = (area.height * 4 / 5).max(28);
+        let w = (area.width * 4 / 5).max(TERMINAL_MIN_WIDTH);
+        let h = (area.height * 4 / 5).max(TERMINAL_MIN_HEIGHT);
         let overlay = Rect {
             x: area.x + (area.width - w) / 2,
             y: area.y + (area.height - h) / 2,

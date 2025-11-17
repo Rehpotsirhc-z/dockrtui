@@ -16,6 +16,9 @@ use crate::theme::Theme;
 // Animated splash screen
 use crate::ui::splash::{SplashScreen, SplashEvent};
 
+pub const TERMINAL_MIN_WIDTH: u16 = 70;
+pub const TERMINAL_MIN_HEIGHT: u16 = 28;
+
 enum Route {
     Splash,
     Main,
@@ -23,11 +26,21 @@ enum Route {
 
 pub async fn run() -> Result<()> {
     // --- terminal ---
-    enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+
+    let term_size = terminal.size()?;
+    if term_size.height < TERMINAL_MIN_HEIGHT || term_size.width < TERMINAL_MIN_WIDTH {
+        println!(
+            "Error: terminal size should be at least {}x{}, current is {}x{}",
+            TERMINAL_MIN_WIDTH, TERMINAL_MIN_HEIGHT, term_size.width, term_size.height
+        );
+        std::process::exit(1);
+    }
+
+    enable_raw_mode()?;
     terminal.clear()?;
 
     // --- Splash + control channel ---
