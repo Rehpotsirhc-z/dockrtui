@@ -142,4 +142,41 @@ impl DockerClient {
         let _ = self.inner.remove_image(id, Some(opts), None).await?;
         Ok(())
     }
+
+    // ================== VOLUMES ==================
+
+    pub async fn list_volumes(&self) -> Result<Vec<bollard::models::Volume>> {
+        use bollard::query_parameters::ListVolumesOptionsBuilder;
+        use std::collections::HashMap;
+        let filters: HashMap<String, Vec<String>> = HashMap::new();
+        let opts = ListVolumesOptionsBuilder::default()
+            .filters(&filters)
+            .build();
+        let response = self.inner.list_volumes(Some(opts)).await?;
+        Ok(response.volumes.unwrap_or_default())
+    }
+
+    pub async fn inspect_volume(&self, name: &str) -> Result<bollard::models::Volume> {
+        Ok(self.inner.inspect_volume(name).await?)
+    }
+
+    pub async fn remove_volume(&self, name: &str, force: bool) -> Result<()> {
+        use bollard::query_parameters::{RemoveVolumeOptions, RemoveVolumeOptionsBuilder};
+        let opts: RemoveVolumeOptions = RemoveVolumeOptionsBuilder::default()
+            .force(force)
+            .build();
+        self.inner.remove_volume(name, Some(opts)).await?;
+        Ok(())
+    }
+
+    pub async fn prune_volumes(&self) -> Result<()> {
+        use bollard::query_parameters::{PruneVolumesOptions, PruneVolumesOptionsBuilder};
+        use std::collections::HashMap;
+        let filters: HashMap<String, Vec<String>> = HashMap::new();
+        let opts: PruneVolumesOptions = PruneVolumesOptionsBuilder::default()
+            .filters(&filters)
+            .build();
+        self.inner.prune_volumes(Some(opts)).await?;
+        Ok(())
+    }
 }

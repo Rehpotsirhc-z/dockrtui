@@ -22,10 +22,12 @@ pub use stats::StatsPane;
 mod compose;
 mod images;
 mod networks;
+mod volumes;
 
 pub use compose::ComposeView;
 pub use images::ImagesView;
 pub use networks::NetworksView;
+pub use volumes::VolumesView;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Tab {
@@ -33,6 +35,7 @@ pub enum Tab {
     Images,
     Networks,
     Compose,
+    Volumes,
 }
 
 #[derive(Clone)]
@@ -76,6 +79,7 @@ pub struct Ui {
     pub images: ImagesView,
     pub networks: NetworksView,
     pub compose: ComposeView,
+    pub volumes: VolumesView,
     pub toasts: Toasts,
     pub logs: LogsPane,
     pub stats: StatsPane,
@@ -89,6 +93,7 @@ impl Ui {
             images: ImagesView::new(docker.clone(), theme).await?,
             networks: NetworksView::new(docker.clone(), theme).await?,
             compose: ComposeView::new(docker.clone(), theme).await?,
+            volumes: VolumesView::new(docker.clone(), theme).await?,
             theme,
             tab: Tab::Containers,
             toasts: Toasts::new(),
@@ -104,6 +109,7 @@ impl Ui {
             || self.containers.is_modal_open()
             || self.networks.is_modal_open()
             || self.compose.is_modal_open()
+            || self.volumes.is_modal_open()
         // ImagesView currently has no modal, so it is not included here.
     }
 
@@ -112,6 +118,7 @@ impl Ui {
         self.images.on_tick();
         self.networks.on_tick();
         self.compose.on_tick();
+        self.volumes.on_tick();
 
         if self.stats.visible
             && let Some(id) = self.containers.selected_id()
@@ -137,6 +144,9 @@ impl Ui {
         if let Some((msg, col)) = self.compose.last_note.take() {
             self.toasts.push(msg, col, Duration::from_secs(2));
         }
+        if let Some((msg, col)) = self.volumes.last_note.take() {
+            self.toasts.push(msg, col, Duration::from_secs(2));
+        }
 
         Ok(())
     }
@@ -153,6 +163,10 @@ impl Ui {
         }
         if self.compose.has_modal() {
             self.compose.on_key(key).await?;
+            return Ok(());
+        }
+        if self.volumes.has_modal() {
+            self.volumes.on_key(key).await?;
             return Ok(());
         }
 
@@ -227,6 +241,10 @@ impl Ui {
                 self.tab = Tab::Compose;
                 return Ok(());
             }
+            crossterm::event::KeyCode::Char('5') => {
+                self.tab = Tab::Volumes;
+                return Ok(());
+            }
             crossterm::event::KeyCode::Tab => {
                 self.next_tab();
                 return Ok(());
@@ -244,6 +262,7 @@ impl Ui {
             Tab::Images => self.images.on_key(key).await?,
             Tab::Networks => self.networks.on_key(key).await?,
             Tab::Compose => self.compose.on_key(key).await?,
+            Tab::Volumes => self.volumes.on_key(key).await?,
         }
         Ok(())
     }
@@ -253,39 +272,46 @@ impl Ui {
             Tab::Containers => Tab::Images,
             Tab::Images => Tab::Networks,
             Tab::Networks => Tab::Compose,
-            Tab::Compose => Tab::Containers,
+            Tab::Compose => Tab::Volumes,
+            Tab::Volumes => Tab::Containers,
         }
     }
 
     pub fn prev_tab(&mut self) {
         self.tab = match self.tab {
-            Tab::Containers => Tab::Compose,
+            Tab::Containers => Tab::Volumes,
             Tab::Images => Tab::Containers,
             Tab::Networks => Tab::Images,
             Tab::Compose => Tab::Networks,
+            Tab::Volumes => Tab::Compose,
         }
     }
 
     fn footer_help_for_tab(&self) -> String {
         match self.tab {
             Tab::Containers => String::from(
-                "q: quit • esc: back/close popup • 1–4/Tab: switch tabs • j/k: move \
+                "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
                  • a: all/running • r/F5: refresh • Enter/Space: start/stop \
                  • R: restart • l: logs • t: stats",
             ),
             Tab::Images => String::from(
-                "q: quit • esc: back/close popup • 1–4/Tab: switch tabs • j/k: move \
+                "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
                  • /: search • a: all/dangling • o/O: sort • r/F5: refresh \
                  • i: inspect • d: delete • S: save visible list",
             ),
             Tab::Networks => String::from(
-                "q: quit • esc: back/close popup • 1–4/Tab: switch tabs • j/k: move \
+                "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
                  • /: search • a: all/user-defined • o/O: sort • r/F5: refresh \
                  • i: inspect • d: delete",
             ),
             Tab::Compose => String::from(
-                "q: quit • esc: back/close popup • 1–4/Tab: switch tabs • j/k: move \
+                "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
                  • /: search • r/F5: rescan • u: up -d • d: down • s: ps • l: logs",
+            ),
+            Tab::Volumes => String::from(
+                "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
+                 • /: search • o/O: sort • r/F5: refresh \
+                 • i: inspect • d: delete • p: prune unused",
             ),
         }
     }
@@ -301,13 +327,14 @@ impl Ui {
             ])
             .split(area);
 
-        let titles = [" Containers", " Images", " Networks", " Compose"];
+        let titles = [" Containers", " Images", " Networks", " Compose", " Volumes"];
 
         let selected_idx = match self.tab {
             Tab::Containers => 0,
             Tab::Images => 1,
             Tab::Networks => 2,
             Tab::Compose => 3,
+            Tab::Volumes => 4,
         };
 
         let tabs = Tabs::new(titles.iter().map(|t| Span::raw(*t)).collect::<Vec<_>>())
@@ -327,6 +354,7 @@ impl Ui {
             Tab::Images => self.images.draw(f, chunks[1]),
             Tab::Networks => self.networks.draw(f, chunks[1]),
             Tab::Compose => self.compose.draw(f, chunks[1]),
+            Tab::Volumes => self.volumes.draw(f, chunks[1]),
         }
 
         // overlays
