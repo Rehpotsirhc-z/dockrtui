@@ -22,11 +22,12 @@ Because managing containers shouldn’t feel like typing spells in Bash.
 
 ## 🚀 Features
 
-- **Containers, Images, Networks & Compose** — all in one place  
+- **Containers, Images, Networks, Volumes & Compose** — all in one place  
 - **Quick actions** — start, stop, restart, inspect, prune  
 - **Smart search and filtering**  
 - **Built-in shell** inside containers (`cd`, history, autocomplete, etc.)  
 - **Compose integration** — detect and control your Compose projects  
+- **Volume management** — list, inspect, delete, and prune unused volumes
 - **Clean, efficient TUI** powered by `ratatui`  
 
 ---
@@ -118,6 +119,7 @@ Navigate everything with your keyboard:
 * **Images** → list, remove, check creation date and size
 * **Networks** → inspect, clean, or create networks
 * **Compose** → view detected Compose projects and run `up`, `down`, `logs`, etc.
+* **Volumes** → list, inspect, delete, and prune unused volumes
 
 ---
 
