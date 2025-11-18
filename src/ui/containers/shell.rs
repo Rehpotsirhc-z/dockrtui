@@ -1,14 +1,14 @@
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
-    Frame,
 };
 
 use crate::theme::Theme;
@@ -16,7 +16,10 @@ use crate::theme::Theme;
 /* ---------------- types ---------------- */
 
 #[derive(Clone, Copy)]
-enum ShellKind { Sh, Bash }
+enum ShellKind {
+    Sh,
+    Bash,
+}
 
 pub enum ShellEvent {
     None,
@@ -85,37 +88,60 @@ impl ShellPopup {
             self.shell = ShellKind::Sh;
         } else {
             let ok_bash = self.quick_exec("echo ok", ShellKind::Bash).is_ok();
-            if ok_bash { self.shell = ShellKind::Bash; }
+            if ok_bash {
+                self.shell = ShellKind::Bash;
+            }
         }
         // HOME inside the container
         if let Ok(h) = self.exec_raw_in_container("printf %s \"$HOME\"") {
             let h = h.trim();
-            if !h.is_empty() { self.home = Some(h.to_string()); }
+            if !h.is_empty() {
+                self.home = Some(h.to_string());
+            }
         }
     }
 
     fn quick_exec(&self, cmd: &str, kind: ShellKind) -> Result<()> {
-        let (interp, flag) = match kind { ShellKind::Sh => ("sh", "-lc"), ShellKind::Bash => ("bash", "-lc") };
+        let (interp, flag) = match kind {
+            ShellKind::Sh => ("sh", "-lc"),
+            ShellKind::Bash => ("bash", "-lc"),
+        };
         let status = Command::new("docker")
             .args(["exec", "-i", &self.id, interp, flag, cmd])
-            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()?;
-        if status.success() { Ok(()) } else { Err(anyhow!("non-zero")) }
+        if status.success() {
+            Ok(())
+        } else {
+            Err(anyhow!("non-zero"))
+        }
     }
 
     fn exec_raw_in_container(&self, script: &str) -> Result<String> {
-        let (interp, flag) = match self.shell { ShellKind::Sh => ("sh", "-lc"), ShellKind::Bash => ("bash", "-lc") };
+        let (interp, flag) = match self.shell {
+            ShellKind::Sh => ("sh", "-lc"),
+            ShellKind::Bash => ("bash", "-lc"),
+        };
         let out = Command::new("docker")
             .args(["exec", "-i", &self.id, interp, flag, script])
             .output()?;
         let mut s = String::new();
-        if !out.stdout.is_empty() { s.push_str(&String::from_utf8_lossy(&out.stdout)); }
-        if !out.stderr.is_empty() { s.push_str(&String::from_utf8_lossy(&out.stderr)); }
+        if !out.stdout.is_empty() {
+            s.push_str(&String::from_utf8_lossy(&out.stdout));
+        }
+        if !out.stderr.is_empty() {
+            s.push_str(&String::from_utf8_lossy(&out.stderr));
+        }
         Ok(s)
     }
 
     fn exec_in_container(&self, user_cmd: &str) -> Result<String> {
-        let (interp, flag) = match self.shell { ShellKind::Sh => ("sh", "-lc"), ShellKind::Bash => ("bash", "-lc") };
+        let (interp, flag) = match self.shell {
+            ShellKind::Sh => ("sh", "-lc"),
+            ShellKind::Bash => ("bash", "-lc"),
+        };
         let full = if self.cwd == "/" {
             user_cmd.to_string()
         } else {
@@ -126,8 +152,12 @@ impl ShellPopup {
             .output()?;
 
         let mut s = String::new();
-        if !out.stdout.is_empty() { s.push_str(&String::from_utf8_lossy(&out.stdout)); }
-        if !out.stderr.is_empty() { s.push_str(&String::from_utf8_lossy(&out.stderr)); }
+        if !out.stdout.is_empty() {
+            s.push_str(&String::from_utf8_lossy(&out.stdout));
+        }
+        if !out.stderr.is_empty() {
+            s.push_str(&String::from_utf8_lossy(&out.stderr));
+        }
         Ok(s)
     }
 
@@ -135,20 +165,31 @@ impl ShellPopup {
 
     fn exec_line(&mut self, raw: &str) -> Result<()> {
         let line = raw.trim();
-        if line.is_empty() { return Ok(()); }
+        if line.is_empty() {
+            return Ok(());
+        }
 
         // builtins
-        if line == "exit" { return Err(anyhow!("__EXIT")); }
-        if line == "clear" { self.lines.clear(); return Ok(()); }
+        if line == "exit" {
+            return Err(anyhow!("__EXIT"));
+        }
+        if line == "clear" {
+            self.lines.clear();
+            return Ok(());
+        }
         if line == "help" {
-            self.lines.extend([
-                "Builtins:",
-                "  • cd <dir> (persists) | cd - | cd ~",
-                "  • clear, help, exit",
-                "Notes:",
-                "  • Line-by-line shell (no ncurses/full-screen apps)",
-                "  • History ↑/↓, scroll PgUp/PgDn, Tab autocomplete on cd",
-            ].into_iter().map(|s| s.to_string()));
+            self.lines.extend(
+                [
+                    "Builtins:",
+                    "  • cd <dir> (persists) | cd - | cd ~",
+                    "  • clear, help, exit",
+                    "Notes:",
+                    "  • Line-by-line shell (no ncurses/full-screen apps)",
+                    "  • History ↑/↓, scroll PgUp/PgDn, Tab autocomplete on cd",
+                ]
+                .into_iter()
+                .map(|s| s.to_string()),
+            );
             return Ok(());
         }
 
@@ -203,7 +244,8 @@ impl ShellPopup {
                 self.cwd = candidate;
                 self.lines.push(format!("(cwd -> {})", self.cwd));
             } else {
-                self.lines.push(format!("cd: {}: no such file or directory", new));
+                self.lines
+                    .push(format!("cd: {}: no such file or directory", new));
             }
             return Ok(());
         }
@@ -233,7 +275,9 @@ impl ShellPopup {
 
     fn handle_tab_completion(&mut self) {
         let s = self.input.trim_end();
-        if !s.starts_with("cd ") { return; }
+        if !s.starts_with("cd ") {
+            return;
+        }
 
         let pref = s[3..].trim();
         let (base_dir, pat) = split_base_and_pattern(pref, self.home.as_deref());
@@ -259,10 +303,7 @@ impl ShellPopup {
             escape_for_shell(&pat)
         );
 
-        let out = match self.exec_raw_in_container(&script) {
-            Ok(s) => s,
-            Err(_) => String::new(),
-        };
+        let out = self.exec_raw_in_container(&script).unwrap_or_default();
 
         let mut items: Vec<String> = out
             .lines()
@@ -271,9 +312,13 @@ impl ShellPopup {
             .collect();
 
         for it in &mut items {
-            if it.starts_with("./") { *it = it.trim_start_matches("./").to_string(); }
+            if it.starts_with("./") {
+                *it = it.trim_start_matches("./").to_string();
+            }
         }
-        if items.is_empty() { return; }
+        if items.is_empty() {
+            return;
+        }
         items.sort();
 
         if items.len() == 1 {
@@ -289,7 +334,8 @@ impl ShellPopup {
         if !lcp.is_empty() && lcp != pat {
             let new_pref = join_base_name(&base_dir, &lcp);
             self.input = format!("cd {}", new_pref.trim_start_matches("./"));
-            self.lines.push(format!("> {}", self.completions.join("  ")));
+            self.lines
+                .push(format!("> {}", self.completions.join("  ")));
             return;
         }
 
@@ -298,7 +344,8 @@ impl ShellPopup {
         let completed = join_base_name(&base_dir, first);
         self.input = format!("cd {}/", completed.trim_start_matches("./"));
         self.comp_idx = 1 % self.completions.len();
-        self.lines.push(format!("> {}", self.completions.join("  ")));
+        self.lines
+            .push(format!("> {}", self.completions.join("  ")));
     }
 
     fn reset_completion(&mut self) {
@@ -331,29 +378,42 @@ impl ShellPopup {
                 }
             }
 
-            KeyCode::Backspace => { self.input.pop(); self.reset_completion(); }
+            KeyCode::Backspace => {
+                self.input.pop();
+                self.reset_completion();
+            }
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.input.clear(); self.reset_completion();
+                self.input.clear();
+                self.reset_completion();
             }
             KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.lines.clear();
             }
 
-            KeyCode::Char(ch) => { self.input.push(ch); self.reset_completion(); }
+            KeyCode::Char(ch) => {
+                self.input.push(ch);
+                self.reset_completion();
+            }
 
             KeyCode::Up => {
                 self.reset_completion();
-                if self.history.is_empty() { return Ok(ShellEvent::None); }
+                if self.history.is_empty() {
+                    return Ok(ShellEvent::None);
+                }
                 let idx = match self.hist_idx {
                     None => self.history.len().saturating_sub(1),
                     Some(i) => i.saturating_sub(1),
                 };
                 self.hist_idx = Some(idx);
-                if let Some(s) = self.history.get(idx) { self.input = s.clone(); }
+                if let Some(s) = self.history.get(idx) {
+                    self.input = s.clone();
+                }
             }
             KeyCode::Down => {
                 self.reset_completion();
-                if self.history.is_empty() { return Ok(ShellEvent::None); }
+                if self.history.is_empty() {
+                    return Ok(ShellEvent::None);
+                }
                 match self.hist_idx {
                     None => {}
                     Some(i) if i + 1 < self.history.len() => {
@@ -361,22 +421,35 @@ impl ShellPopup {
                         self.hist_idx = Some(ni);
                         self.input = self.history[ni].clone();
                     }
-                    _ => { self.hist_idx = None; self.input.clear(); }
+                    _ => {
+                        self.hist_idx = None;
+                        self.input.clear();
+                    }
                 }
             }
 
             KeyCode::PageUp => {
                 self.scroll = (self.scroll + 5).min(self.lines.len().saturating_sub(1));
             }
-            KeyCode::PageDown => { self.scroll = self.scroll.saturating_sub(5); }
+            KeyCode::PageDown => {
+                self.scroll = self.scroll.saturating_sub(5);
+            }
 
-            KeyCode::Tab => { self.handle_tab_completion(); }
+            KeyCode::Tab => {
+                self.handle_tab_completion();
+            }
             KeyCode::BackTab => {
                 if !self.completions.is_empty() {
-                    if self.comp_idx == 0 { self.comp_idx = self.completions.len(); }
+                    if self.comp_idx == 0 {
+                        self.comp_idx = self.completions.len();
+                    }
                     self.comp_idx -= 1;
                     let s = self.input.trim_end();
-                    let pref = if s.starts_with("cd ") { s[3..].trim() } else { "" };
+                    let pref = if s.starts_with("cd ") {
+                        s[3..].trim()
+                    } else {
+                        ""
+                    };
                     let (base_dir, _pat) = split_base_and_pattern(pref, self.home.as_deref());
                     let name = &self.completions[self.comp_idx % self.completions.len()];
                     let completed = join_base_name(&base_dir, name);
@@ -404,7 +477,11 @@ impl ShellPopup {
 
         f.render_widget(Clear, overlay);
 
-        let title = format!("Shell — {} ({})", self.name, &self.id.chars().take(12).collect::<String>());
+        let title = format!(
+            "Shell — {} ({})",
+            self.name,
+            &self.id.chars().take(12).collect::<String>()
+        );
         let block = Block::default()
             .borders(Borders::ALL)
             .title(self.theme.title(&title))
@@ -430,7 +507,7 @@ impl ShellPopup {
 
         // output
         let mut lines: Vec<Line> = Vec::new();
-        let spinner = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
+        let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
         let spin = spinner[(tick as usize) % spinner.len()];
         let max_lines = chunks[0].height as usize;
         let total = self.lines.len();
@@ -463,7 +540,10 @@ impl ShellPopup {
         f.render_widget(Paragraph::new(inp), chunks[1]);
 
         // hints
-        let sh = match self.shell { ShellKind::Sh => "sh", ShellKind::Bash => "bash" };
+        let sh = match self.shell {
+            ShellKind::Sh => "sh",
+            ShellKind::Bash => "bash",
+        };
         let hint = Line::from(vec![
             Span::styled(
                 "enter: run  |  esc: close  |  type `exit` to quit shell  |  ↑/↓: history  |  PgUp/PgDn: scroll  |  ctrl-l: clear  |  Tab/⇧Tab: cd autocomplete",
@@ -483,13 +563,21 @@ impl ShellPopup {
 
 /// Escape a simple argument for sh/bash
 fn escape_for_shell(s: &str) -> String {
-    if s.is_empty() { return "''".into(); }
-    if s.chars().all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c)) {
+    if s.is_empty() {
+        return "''".into();
+    }
+    if s.chars()
+        .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
+    {
         return s.into();
     }
     let mut out = String::from("'");
     for ch in s.chars() {
-        if ch == '\'' { out.push_str("'\"'\"'"); } else { out.push(ch); }
+        if ch == '\'' {
+            out.push_str("'\"'\"'");
+        } else {
+            out.push(ch);
+        }
     }
     out.push('\'');
     out
@@ -502,18 +590,28 @@ fn join_base_name(base: &str, name: &str) -> String {
     } else if base == "/" {
         format!("/{}", name.trim_start_matches('/'))
     } else {
-        format!("{}/{}", base.trim_end_matches('/'), name.trim_start_matches('/'))
+        format!(
+            "{}/{}",
+            base.trim_end_matches('/'),
+            name.trim_start_matches('/')
+        )
     }
 }
 
 /// Split a `cd ARG` into (base_dir, pattern)
 fn split_base_and_pattern(arg: &str, home: Option<&str>) -> (String, String) {
     let arg = arg.trim();
-    if arg.is_empty() { return (".".into(), String::new()); }
+    if arg.is_empty() {
+        return (".".into(), String::new());
+    }
     let expanded = if arg == "~" {
         home.unwrap_or("/root").to_string()
     } else if arg.starts_with("~/") {
-        format!("{}/{}", home.unwrap_or("/root"), arg.trim_start_matches("~/"))
+        format!(
+            "{}/{}",
+            home.unwrap_or("/root"),
+            arg.trim_start_matches("~/")
+        )
     } else {
         arg.to_string()
     };
@@ -529,34 +627,50 @@ fn split_base_and_pattern(arg: &str, home: Option<&str>) -> (String, String) {
 
 /// Longest common prefix across a set of strings
 fn longest_common_prefix(items: &[String]) -> String {
-    if items.is_empty() { return String::new(); }
+    if items.is_empty() {
+        return String::new();
+    }
     let mut it = items.iter();
     let mut prefix = it.next().unwrap().clone();
     for s in it {
         let max = prefix.len().min(s.len());
         let mut k = 0usize;
-        while k < max && prefix.as_bytes()[k] == s.as_bytes()[k] { k += 1; }
+        while k < max && prefix.as_bytes()[k] == s.as_bytes()[k] {
+            k += 1;
+        }
         prefix.truncate(k);
-        if prefix.is_empty() { break; }
+        if prefix.is_empty() {
+            break;
+        }
     }
     prefix
 }
 
 /// Very simple path normalization (.., .)
 fn simplify_path(p: &str) -> String {
-    if p.is_empty() { return "/".into(); }
+    if p.is_empty() {
+        return "/".into();
+    }
     let abs = p.starts_with('/');
     let parts = p.split('/').filter(|s| !s.is_empty());
     let mut stack: Vec<&str> = Vec::new();
     for part in parts {
         match part {
             "." => {}
-            ".." => { stack.pop(); }
+            ".." => {
+                stack.pop();
+            }
             _ => stack.push(part),
         }
     }
-    let mut out = if abs { String::from("/") } else { String::new() };
+    let mut out = if abs {
+        String::from("/")
+    } else {
+        String::new()
+    };
     out.push_str(&stack.join("/"));
-    if out.is_empty() { out.push('/'); }
+    if out.is_empty() {
+        out.push('/');
+    }
     out
 }

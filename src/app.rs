@@ -5,16 +5,19 @@ use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend, restore};
 use tokio::sync::mpsc;
 
-use crate::{docker::DockerClient, ui::Ui};
 use crate::theme::Theme;
+use crate::{docker::DockerClient, ui::Ui};
 
 // Animated splash screen
-use crate::ui::splash::{SplashScreen, SplashEvent};
+use crate::ui::splash::{SplashEvent, SplashScreen};
+
+pub const TERMINAL_MIN_WIDTH: u16 = 70;
+pub const TERMINAL_MIN_HEIGHT: u16 = 28;
 
 enum Route {
     Splash,
@@ -23,11 +26,22 @@ enum Route {
 
 pub async fn run() -> Result<()> {
     // --- terminal ---
-    enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+
+    let term_size = terminal.size()?;
+    if term_size.height < TERMINAL_MIN_HEIGHT || term_size.width < TERMINAL_MIN_WIDTH {
+        println!(
+            "Error: terminal size should be at least {}x{}, current is {}x{}",
+            TERMINAL_MIN_WIDTH, TERMINAL_MIN_HEIGHT, term_size.width, term_size.height
+        );
+        std::process::exit(1);
+    }
+
+    enable_raw_mode()?;
+    set_panic_hook();
     terminal.clear()?;
 
     // --- Splash + control channel ---
@@ -39,7 +53,10 @@ pub async fn run() -> Result<()> {
 
     // --- Asynchronous initialization task ---
     tokio::spawn(async move {
-        let _ = splash_tx.send(SplashEvent::Step { pct: 0.10, label: "Connect to Docker…".into() });
+        let _ = splash_tx.send(SplashEvent::Step {
+            pct: 0.10,
+            label: "Connect to Docker…".into(),
+        });
         let docker = match DockerClient::connect_default().await {
             Ok(d) => d,
             Err(e) => {
@@ -49,19 +66,28 @@ pub async fn run() -> Result<()> {
             }
         };
 
-        let _ = splash_tx.send(SplashEvent::Step { pct: 0.45, label: "Warm-up containers…".into() });
+        let _ = splash_tx.send(SplashEvent::Step {
+            pct: 0.45,
+            label: "Warm-up containers…".into(),
+        });
         if let Err(e) = docker.list_containers(true).await {
             let _ = splash_tx.send(SplashEvent::Fail(format!("list: {e}")));
             let _ = ui_tx.send(Err(e));
             return;
         }
 
-        let _ = splash_tx.send(SplashEvent::Step { pct: 0.70, label: "Build UI state…".into() });
+        let _ = splash_tx.send(SplashEvent::Step {
+            pct: 0.70,
+            label: "Build UI state…".into(),
+        });
         let ui = Ui::new(docker).await;
 
         match ui {
             Ok(ui) => {
-                let _ = splash_tx.send(SplashEvent::Step { pct: 0.95, label: "Final touches…".into() });
+                let _ = splash_tx.send(SplashEvent::Step {
+                    pct: 0.95,
+                    label: "Final touches…".into(),
+                });
                 let _ = splash_tx.send(SplashEvent::Done);
                 let _ = ui_tx.send(Ok(ui));
             }
@@ -96,25 +122,25 @@ pub async fn run() -> Result<()> {
             .unwrap_or(Duration::from_millis(0));
 
         // input
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                match route {
-                    Route::Splash => {
-                        // 'q' = quit, 'Esc'/'Enter' = skip splash
-                        if matches!(key.code, KeyCode::Char('q')) {
-                            break 'outer;
-                        }
-                        splash.on_key(key);
+        if event::poll(timeout)?
+            && let Event::Key(key) = event::read()?
+        {
+            match route {
+                Route::Splash => {
+                    // 'q' = quit, 'Esc'/'Enter' = skip splash
+                    if matches!(key.code, KeyCode::Char('q')) {
+                        break 'outer;
                     }
-                    Route::Main => {
-                        if let Some(u) = ui.as_mut() {
-                            // 1) let the UI handle the key (popups, shell, etc.)
-                            u.on_key(key).await?;
+                    splash.on_key(key);
+                }
+                Route::Main => {
+                    if let Some(u) = ui.as_mut() {
+                        // 1) let the UI handle the key (popups, shell, etc.)
+                        u.on_key(key).await?;
 
-                            // 2) Quit ONLY if 'q' and no modal is open
-                            if matches!(key.code, KeyCode::Char('q')) && !u.is_modal_open() {
-                                break 'outer;
-                            }
+                        // 2) Quit ONLY if 'q' and no modal is open
+                        if matches!(key.code, KeyCode::Char('q')) && !u.is_modal_open() {
+                            break 'outer;
                         }
                     }
                 }
@@ -128,13 +154,13 @@ pub async fn run() -> Result<()> {
                     splash.on_tick();
 
                     // Try to retrieve the ready UI (non-blocking)
-                    if ui.is_none() {
-                        if let Ok(res) = ui_rx.try_recv() {
-                            match res {
-                                Ok(u) => ui = Some(u),
-                                Err(_e) => {
-                                    // Failure is displayed in the splash; stay on splash
-                                }
+                    if ui.is_none()
+                        && let Ok(res) = ui_rx.try_recv()
+                    {
+                        match res {
+                            Ok(u) => ui = Some(u),
+                            Err(_e) => {
+                                // Failure is displayed in the splash; stay on splash
                             }
                         }
                     }
@@ -160,4 +186,12 @@ pub async fn run() -> Result<()> {
     let mut stdout: io::Stdout = std::io::stdout();
     execute!(stdout, LeaveAlternateScreen)?;
     Ok(())
+}
+
+fn set_panic_hook() {
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        restore();
+        hook(panic_info);
+    }));
 }

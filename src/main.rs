@@ -2,8 +2,8 @@ use color_eyre::eyre::Result;
 
 mod app;
 mod docker;
-mod ui;
 mod theme;
+mod ui;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {

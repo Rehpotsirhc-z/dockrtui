@@ -3,14 +3,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
-    Frame,
 };
 use serde_json::Value;
 
@@ -115,7 +115,8 @@ impl ComposeView {
         // clamp selection
         let len = self.visible_indices().len();
         if self.state.selected().unwrap_or(0) >= len {
-            self.state.select(if len == 0 { None } else { Some(len - 1) });
+            self.state
+                .select(if len == 0 { None } else { Some(len - 1) });
         }
 
         Ok(())
@@ -144,8 +145,16 @@ impl ComposeView {
         };
 
         for entry in arr {
-            let name = entry.get("Name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let status = entry.get("Status").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let name = entry
+                .get("Name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let status = entry
+                .get("Status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
 
             // Try to retrieve compose file(s) from ConfigFiles
             let cfg_raw = entry
@@ -182,10 +191,18 @@ impl ComposeView {
             };
 
             out.push(ComposeProject {
-                name: if name.is_empty() { file_name.clone() } else { name },
+                name: if name.is_empty() {
+                    file_name.clone()
+                } else {
+                    name
+                },
                 path,
                 file_name,
-                status: if status.is_empty() { None } else { Some(status) },
+                status: if status.is_empty() {
+                    None
+                } else {
+                    Some(status)
+                },
             });
         }
 
@@ -255,9 +272,7 @@ impl ComposeView {
         idx.sort_by(|&a, &b| {
             let pa = &self.rows[a];
             let pb = &self.rows[b];
-            pa.name
-                .cmp(&pb.name)
-                .then(pa.file_name.cmp(&pb.file_name))
+            pa.name.cmp(&pb.name).then(pa.file_name.cmp(&pb.file_name))
         });
 
         idx
@@ -361,7 +376,8 @@ impl ComposeView {
             let len = vis.len();
             let cur = self.state.selected().unwrap_or(0);
             if cur >= len {
-                self.state.select(if len == 0 { None } else { Some(len - 1) });
+                self.state
+                    .select(if len == 0 { None } else { Some(len - 1) });
             }
             return Ok(());
         }
@@ -495,9 +511,12 @@ impl ComposeView {
             ));
         }
         if just_scanned {
-            spans.push(
-                Span::styled(format!(" {spin}"), Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            );
+            spans.push(Span::styled(
+                format!(" {spin}"),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ));
         }
 
         let header = Paragraph::new(Line::from(spans)).block(theme.block("Compose"));
@@ -507,8 +526,11 @@ impl ComposeView {
         let vis = self.visible_indices();
         let selected_row = self.state.selected().unwrap_or(0);
 
-        let header_row = Row::new(vec!["PROJECT", "STATUS", "FILE", "PATH"])
-            .style(Style::default().fg(theme.muted).add_modifier(Modifier::BOLD));
+        let header_row = Row::new(vec!["PROJECT", "STATUS", "FILE", "PATH"]).style(
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        );
 
         let rows = vis.iter().enumerate().map(|(i, &idx)| {
             let p = &self.rows[idx];
@@ -518,8 +540,12 @@ impl ComposeView {
             let file = p.file_name.clone();
             let path_str = truncate_middle(p.path.to_string_lossy().as_ref(), 60);
 
-            let mut row =
-                Row::new(vec![Cell::from(proj), Cell::from(status), Cell::from(file), Cell::from(path_str)]);
+            let mut row = Row::new(vec![
+                Cell::from(proj),
+                Cell::from(status),
+                Cell::from(file),
+                Cell::from(path_str),
+            ]);
 
             if i == selected_row {
                 row = row.style(
@@ -599,10 +625,7 @@ fn match_visible(p: &ComposeProject, tokens: &[String]) -> bool {
         p.name.to_lowercase(),
         p.file_name.to_lowercase(),
         p.status.as_deref().unwrap_or("-").to_lowercase(),
-        p.path
-            .to_string_lossy()
-            .to_string()
-            .to_lowercase()
+        p.path.to_string_lossy().to_string().to_lowercase()
     );
     tokens.iter().all(|t| hay.contains(t))
 }

@@ -1,9 +1,8 @@
-mod view;
 mod actions;
-mod rocket;
 mod progress;
-pub mod util;
+mod rocket;
 mod shell;
+pub mod util;
+mod view;
 
 pub use view::ContainersView;
-

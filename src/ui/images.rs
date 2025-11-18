@@ -6,11 +6,11 @@ use anyhow::Result;
 use bollard::models::ImageSummary;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
-    Frame,
 };
 
 use chrono::{TimeZone, Utc};
@@ -88,7 +88,8 @@ impl ImagesView {
         let vis_len = self.visible_indices().len();
         if self.state.selected().unwrap_or(0) >= vis_len {
             let len = vis_len.saturating_sub(1);
-            self.state.select(if vis_len == 0 { None } else { Some(len) });
+            self.state
+                .select(if vis_len == 0 { None } else { Some(len) });
         }
         self.last_refresh = Instant::now();
         Ok(())
@@ -147,8 +148,11 @@ impl ImagesView {
             let vis_len = vis.len();
             let cur = self.state.selected().unwrap_or(0);
             if cur >= vis_len {
-                self.state
-                    .select(if vis_len == 0 { None } else { Some(vis_len - 1) });
+                self.state.select(if vis_len == 0 {
+                    None
+                } else {
+                    Some(vis_len - 1)
+                });
             }
             return Ok(());
         }
@@ -299,11 +303,7 @@ impl ImagesView {
                 SortKey::Size => key_size(ia).cmp(&key_size(ib)),
                 SortKey::Created => key_created(ia).cmp(&key_created(ib)),
             };
-            if self.sort_asc {
-                ord
-            } else {
-                ord.reverse()
-            }
+            if self.sort_asc { ord } else { ord.reverse() }
         });
 
         indices
@@ -353,7 +353,11 @@ impl ImagesView {
         };
         let arrow = if self.sort_asc { "↑" } else { "↓" };
 
-        let mode = if self.dangling_only { "dangling" } else { "all" };
+        let mode = if self.dangling_only {
+            "dangling"
+        } else {
+            "all"
+        };
 
         let mut spans = vec![Span::raw(" ")];
         spans.extend(title_line.spans.clone());
@@ -378,7 +382,9 @@ impl ImagesView {
         if just_refreshed {
             spans.push(Span::styled(
                 format!(" {spin}"),
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
 
@@ -389,8 +395,11 @@ impl ImagesView {
         let vis = self.visible_indices();
         let selected_row = self.state.selected().unwrap_or(0);
 
-        let header_row = Row::new(vec!["REPO:TAG", "SIZE", "CREATED", "ID"])
-            .style(Style::default().fg(theme.muted).add_modifier(Modifier::BOLD));
+        let header_row = Row::new(vec!["REPO:TAG", "SIZE", "CREATED", "ID"]).style(
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        );
 
         let rows = vis.iter().enumerate().map(|(i, &idx)| {
             let img = &self.rows[idx];
@@ -509,8 +518,8 @@ fn image_name(img: &ImageSummary) -> String {
 
 fn match_visible(img: &ImageSummary, tokens: &[String], dangling_only: bool) -> bool {
     if dangling_only {
-        let dangling = img.repo_tags.is_empty()
-            || img.repo_tags.iter().all(|t| t.starts_with("<none>"));
+        let dangling =
+            img.repo_tags.is_empty() || img.repo_tags.iter().all(|t| t.starts_with("<none>"));
         if !dangling {
             return false;
         }

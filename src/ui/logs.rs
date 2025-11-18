@@ -6,11 +6,11 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use futures_lite::StreamExt;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
-    Frame,
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
@@ -28,10 +28,10 @@ pub struct LogsPane {
     lines: VecDeque<String>,
 
     // UI state
-    paused: bool,         // freeze autoscroll, but keep buffering
-    follow: bool,         // if true and scroll==0, always stick to the bottom
-    wrap: bool,           // soft visual wrapping
-    scroll: usize,        // number of lines from the bottom (0 = bottom)
+    paused: bool,  // freeze autoscroll, but keep buffering
+    follow: bool,  // if true and scroll==0, always stick to the bottom
+    wrap: bool,    // soft visual wrapping
+    scroll: usize, // number of lines from the bottom (0 = bottom)
     last_view_rows: usize,
 
     // follow task (docker)
@@ -97,7 +97,11 @@ impl LogsPane {
             KeyCode::Char('p') => {
                 self.paused = !self.paused;
                 self.note(
-                    if self.paused { "⏸ autoscroll paused" } else { "▶ autoscroll resumed" },
+                    if self.paused {
+                        "⏸ autoscroll paused"
+                    } else {
+                        "▶ autoscroll resumed"
+                    },
                     Color::Yellow,
                 );
                 if !self.paused && self.follow {
@@ -107,7 +111,11 @@ impl LogsPane {
             KeyCode::Char('f') => {
                 self.follow = !self.follow;
                 self.note(
-                    if self.follow { "📌 follow on" } else { "📌 follow off" },
+                    if self.follow {
+                        "📌 follow on"
+                    } else {
+                        "📌 follow off"
+                    },
                     Color::Blue,
                 );
                 if self.follow {
@@ -117,7 +125,11 @@ impl LogsPane {
             KeyCode::Char('w') => {
                 self.wrap = !self.wrap;
                 self.note(
-                    if self.wrap { "↪ wrap on" } else { "↪ wrap off" },
+                    if self.wrap {
+                        "↪ wrap on"
+                    } else {
+                        "↪ wrap off"
+                    },
                     Color::Blue,
                 );
             }
@@ -126,18 +138,14 @@ impl LogsPane {
                 self.scroll = 0;
                 self.note("🧹 logs cleared", Color::Blue);
             }
-            KeyCode::Char('s') => {
-                match self.save_to_tmp_all() {
-                    Ok(p) => self.note(format!("💾 saved: {}", p.display()), Color::Green),
-                    Err(e) => self.note(format!("❌ save logs: {e}"), Color::Red),
-                }
-            }
-            KeyCode::Char('S') => {
-                match self.save_to_tmp_filtered() {
-                    Ok(p) => self.note(format!("💾 saved filtered: {}", p.display()), Color::Green),
-                    Err(e) => self.note(format!("❌ save filtered: {e}"), Color::Red),
-                }
-            }
+            KeyCode::Char('s') => match self.save_to_tmp_all() {
+                Ok(p) => self.note(format!("💾 saved: {}", p.display()), Color::Green),
+                Err(e) => self.note(format!("❌ save logs: {e}"), Color::Red),
+            },
+            KeyCode::Char('S') => match self.save_to_tmp_filtered() {
+                Ok(p) => self.note(format!("💾 saved filtered: {}", p.display()), Color::Green),
+                Err(e) => self.note(format!("❌ save filtered: {e}"), Color::Red),
+            },
 
             // ---- search mode
             KeyCode::Char('/') => {
@@ -248,14 +256,22 @@ impl LogsPane {
 
         // footer state + help
         let mut footer = String::new();
-        footer.push_str(if self.follow && self.scroll == 0 { " [FOLLOW]" } else { " [SCROLL]" });
+        footer.push_str(if self.follow && self.scroll == 0 {
+            " [FOLLOW]"
+        } else {
+            " [SCROLL]"
+        });
         if self.paused {
             footer.push_str(" [PAUSE]");
         }
         if self.wrap {
             footer.push_str(" [WRAP]");
         }
-        footer.push_str(&format!("  lines: {} (filtered: {})", total, filtered.len()));
+        footer.push_str(&format!(
+            "  lines: {} (filtered: {})",
+            total,
+            filtered.len()
+        ));
         footer.push_str(&format!("  pos: {}/{}", end, filtered.len()));
         if self.searching {
             footer.push_str(&format!("  | search: {}", self.query));
@@ -375,7 +391,7 @@ impl LogsPane {
 
     fn save_to_tmp_filtered(&self) -> Result<PathBuf> {
         let (filtered, _total) = self.filtered_view();
-        self.save_lines(&filtered.iter().cloned().collect::<Vec<_>>())
+        self.save_lines(&filtered.to_vec())
     }
 
     fn save_lines(&self, lines: &[String]) -> Result<PathBuf> {
@@ -429,7 +445,10 @@ impl LogsPane {
         // optional timestamp prefix at the beginning of the line
         if let Some(ts_end) = guess_timestamp_end(line) {
             let (ts, rest) = line.split_at(ts_end);
-            spans.push(Span::styled(ts.to_string(), Style::default().fg(theme.muted)));
+            spans.push(Span::styled(
+                ts.to_string(),
+                Style::default().fg(theme.muted),
+            ));
             spans.push(Span::raw(rest.to_string()));
             return self.highlight_level_and_query(spans, theme);
         }
@@ -476,10 +495,7 @@ impl LogsPane {
                         final_spans.push(Span::styled(s[from..to].to_string(), base));
                     }
                     let to2 = to + q.len();
-                    final_spans.push(Span::styled(
-                        s[to..to2].to_string(),
-                        base.patch(hi_style),
-                    ));
+                    final_spans.push(Span::styled(s[to..to2].to_string(), base.patch(hi_style)));
                     i = to2;
                 } else {
                     final_spans.push(Span::styled(s[i..].to_string(), base));
@@ -511,10 +527,7 @@ impl LogsPane {
         let next = if forward {
             (start_idx..filtered.len())
                 .find(|&i| filtered[i].to_lowercase().contains(&q))
-                .or_else(|| {
-                    (0..start_idx)
-                        .find(|&i| filtered[i].to_lowercase().contains(&q))
-                })
+                .or_else(|| (0..start_idx).find(|&i| filtered[i].to_lowercase().contains(&q)))
         } else {
             (0..=start_idx)
                 .rev()
@@ -592,10 +605,9 @@ impl LogsPane {
 
 fn level_style(s: &str, theme: Theme) -> Style {
     let l = s.to_lowercase();
-    if l.contains("error") || l.contains(" level=error") || l.contains(" err ") || l.contains(" e ") {
-        Style::default()
-            .fg(Color::Red)
-            .add_modifier(Modifier::BOLD)
+    if l.contains("error") || l.contains(" level=error") || l.contains(" err ") || l.contains(" e ")
+    {
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
     } else if l.contains("warn") || l.contains(" level=warn") {
         Style::default().fg(Color::Yellow)
     } else if l.contains("debug") || l.contains("trace") {

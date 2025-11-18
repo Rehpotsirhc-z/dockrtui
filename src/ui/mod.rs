@@ -1,11 +1,11 @@
 use std::time::{Duration, Instant};
 
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::Span,
     widgets::{Block, Borders, Paragraph, Tabs},
-    Frame,
 };
 
 use crate::{docker::DockerClient, theme::Theme};
@@ -14,18 +14,18 @@ pub mod containers;
 pub use containers::ContainersView;
 
 mod logs;
-mod stats;
 pub mod splash;
+mod stats;
 pub use logs::LogsPane;
 pub use stats::StatsPane;
 
+mod compose;
 mod images;
 mod networks;
-mod compose;
 
+pub use compose::ComposeView;
 pub use images::ImagesView;
 pub use networks::NetworksView;
-pub use compose::ComposeView;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Tab {
@@ -52,8 +52,11 @@ impl Toasts {
     }
 
     pub fn push(&mut self, msg: impl Into<String>, color: Color, ttl: Duration) {
-        self.list
-            .push(Toast { msg: msg.into(), color, until: Instant::now() + ttl });
+        self.list.push(Toast {
+            msg: msg.into(),
+            color,
+            until: Instant::now() + ttl,
+        });
     }
 
     pub fn prune(&mut self) {
@@ -110,10 +113,10 @@ impl Ui {
         self.networks.on_tick();
         self.compose.on_tick();
 
-        if self.stats.visible {
-            if let Some(id) = self.containers.selected_id() {
-                self.stats.attach(&id);
-            }
+        if self.stats.visible
+            && let Some(id) = self.containers.selected_id()
+        {
+            self.stats.attach(&id);
         }
 
         self.logs.on_tick();
@@ -156,8 +159,9 @@ impl Ui {
         // 2) logs and stats overlays take priority over tabs
         if self.logs.visible {
             match key.code {
-                crossterm::event::KeyCode::Char('l')
-                | crossterm::event::KeyCode::Esc => self.logs.toggle(),
+                crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Esc => {
+                    self.logs.toggle()
+                }
                 _ => self.logs.on_key(key),
             }
             return Ok(());
@@ -165,8 +169,9 @@ impl Ui {
 
         if self.stats.visible {
             match key.code {
-                crossterm::event::KeyCode::Char('t')
-                | crossterm::event::KeyCode::Esc => self.stats.set_visible(false),
+                crossterm::event::KeyCode::Char('t') | crossterm::event::KeyCode::Esc => {
+                    self.stats.set_visible(false)
+                }
                 _ => {}
             }
             return Ok(());
@@ -236,9 +241,9 @@ impl Ui {
         // 5) delegate to active tab view
         match self.tab {
             Tab::Containers => self.containers.on_key(key).await?,
-            Tab::Images     => self.images.on_key(key).await?,
-            Tab::Networks   => self.networks.on_key(key).await?,
-            Tab::Compose    => self.compose.on_key(key).await?,
+            Tab::Images => self.images.on_key(key).await?,
+            Tab::Networks => self.networks.on_key(key).await?,
+            Tab::Compose => self.compose.on_key(key).await?,
         }
         Ok(())
     }
@@ -246,18 +251,18 @@ impl Ui {
     pub fn next_tab(&mut self) {
         self.tab = match self.tab {
             Tab::Containers => Tab::Images,
-            Tab::Images     => Tab::Networks,
-            Tab::Networks   => Tab::Compose,
-            Tab::Compose    => Tab::Containers,
+            Tab::Images => Tab::Networks,
+            Tab::Networks => Tab::Compose,
+            Tab::Compose => Tab::Containers,
         }
     }
 
     pub fn prev_tab(&mut self) {
         self.tab = match self.tab {
             Tab::Containers => Tab::Compose,
-            Tab::Images     => Tab::Containers,
-            Tab::Networks   => Tab::Images,
-            Tab::Compose    => Tab::Networks,
+            Tab::Images => Tab::Containers,
+            Tab::Networks => Tab::Images,
+            Tab::Compose => Tab::Networks,
         }
     }
 
@@ -296,18 +301,13 @@ impl Ui {
             ])
             .split(area);
 
-        let titles = [
-            " Containers",
-            " Images",
-            " Networks",
-            " Compose",
-        ];
+        let titles = [" Containers", " Images", " Networks", " Compose"];
 
         let selected_idx = match self.tab {
             Tab::Containers => 0,
-            Tab::Images     => 1,
-            Tab::Networks   => 2,
-            Tab::Compose    => 3,
+            Tab::Images => 1,
+            Tab::Networks => 2,
+            Tab::Compose => 3,
         };
 
         let tabs = Tabs::new(titles.iter().map(|t| Span::raw(*t)).collect::<Vec<_>>())
@@ -324,9 +324,9 @@ impl Ui {
 
         match self.tab {
             Tab::Containers => self.containers.draw(f, chunks[1]),
-            Tab::Images     => self.images.draw(f, chunks[1]),
-            Tab::Networks   => self.networks.draw(f, chunks[1]),
-            Tab::Compose    => self.compose.draw(f, chunks[1]),
+            Tab::Images => self.images.draw(f, chunks[1]),
+            Tab::Networks => self.networks.draw(f, chunks[1]),
+            Tab::Compose => self.compose.draw(f, chunks[1]),
         }
 
         // overlays

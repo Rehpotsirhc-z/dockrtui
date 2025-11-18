@@ -28,9 +28,12 @@ impl Theme {
     }
 
     pub fn title<'a>(&self, txt: &'a str) -> ratatui::widgets::block::Title<'a> {
-        ratatui::widgets::block::Title::from(
-            ratatui::text::Span::styled(txt, Style::default().fg(self.accent).add_modifier(Modifier::BOLD))
-        )
+        ratatui::widgets::block::Title::from(ratatui::text::Span::styled(
+            txt,
+            Style::default()
+                .fg(self.accent)
+                .add_modifier(Modifier::BOLD),
+        ))
     }
 
     pub fn block<'a>(&self, title: &'a str) -> ratatui::widgets::Block<'a> {
@@ -39,5 +42,4 @@ impl Theme {
             .borders(ratatui::widgets::Borders::ALL)
             .border_style(Style::default().fg(self.muted))
     }
-
 }

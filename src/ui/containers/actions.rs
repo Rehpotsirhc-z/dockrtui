@@ -8,7 +8,10 @@ use tokio::sync::mpsc;
 use crate::docker::DockerClient;
 
 #[derive(Clone, Copy)]
-pub enum ActionKind { Starting, Stopping }
+pub enum ActionKind {
+    Starting,
+    Stopping,
+}
 
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
@@ -54,7 +57,12 @@ pub struct ActionAnim {
     pub done_at: Option<Instant>,
 }
 
-pub async fn launch_action(docker: DockerClient, kind: ActionKind, id: String, name: String) -> Result<ActionAnim> {
+pub async fn launch_action(
+    docker: DockerClient,
+    kind: ActionKind,
+    id: String,
+    name: String,
+) -> Result<ActionAnim> {
     let (tx, rx) = mpsc::unbounded_channel::<BarUpdate>();
 
     let done_flag = Arc::new(AtomicBool::new(false));
@@ -90,8 +98,8 @@ pub async fn launch_action(docker: DockerClient, kind: ActionKind, id: String, n
                                 if has_health {
                                     // wait for healthy
                                     loop {
-                                        if let Ok(ins2) = docker.inspect(&id).await {
-                                            if let Some(h) = ins2.state.as_ref().and_then(|s| s.health.as_ref()) {
+                                        if let Ok(ins2) = docker.inspect(&id).await
+                                            && let Some(h) = ins2.state.as_ref().and_then(|s| s.health.as_ref()) {
                                                 if matches!(h.status, Some(ref s) if s.to_string().to_lowercase() == "healthy") {
                                                     let _ = tx.send(BarUpdate { pct: 0.98, phase: BarPhase::WaitingHealthy });
                                                     break;
@@ -99,7 +107,6 @@ pub async fn launch_action(docker: DockerClient, kind: ActionKind, id: String, n
                                                     let _ = tx.send(BarUpdate { pct: 0.90, phase: BarPhase::WaitingHealthy });
                                                 }
                                             }
-                                        }
                                         tokio::time::sleep(Duration::from_millis(240)).await;
                                     }
                                 } else {
@@ -135,7 +142,10 @@ pub async fn launch_action(docker: DockerClient, kind: ActionKind, id: String, n
 
         *res_c.lock().unwrap() = Some(exec_res);
         done_c.store(true, Ordering::Relaxed);
-        let _ = tx.send(BarUpdate { pct: 1.0, phase: BarPhase::Done });
+        let _ = tx.send(BarUpdate {
+            pct: 1.0,
+            phase: BarPhase::Done,
+        });
     });
 
     // Overlay (rocket follows the bar)
