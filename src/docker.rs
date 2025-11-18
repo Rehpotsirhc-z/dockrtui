@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use bollard::models::ContainerSummary;
 use bollard::query_parameters::{
     InspectContainerOptions, ListContainersOptions, ListImagesOptions, LogsOptions,
@@ -11,6 +11,10 @@ use futures_util::{Stream, StreamExt};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::{env, path::Path};
+
+#[cfg(unix)]
+use libc::geteuid;
 
 #[derive(Clone)]
 pub struct DockerClient {
@@ -19,7 +23,8 @@ pub struct DockerClient {
 
 impl DockerClient {
     pub async fn connect_default() -> Result<Self> {
-        let inner = Docker::connect_with_unix("/var/run/docker.sock", 120, API_DEFAULT_VERSION)?;
+        let socket = resolve_docker_socket_path()?;
+        let inner = Docker::connect_with_unix(&socket, 120, API_DEFAULT_VERSION)?;
         Ok(Self { inner })
     }
 
@@ -51,6 +56,7 @@ impl DockerClient {
         self.inner.remove_container(id, Some(opts)).await?;
         Ok(())
     }
+
     pub async fn list_containers(&self, all: bool) -> Result<Vec<ContainerSummary>> {
         let filters: HashMap<String, Vec<String>> = HashMap::new();
         let opts = ListContainersOptions {
@@ -83,11 +89,12 @@ impl DockerClient {
                 Ok(String::from_utf8_lossy(&message).to_string())
             }
             Ok(_) => Ok(String::new()),
-            Err(e) => Err(anyhow::anyhow!(e)),
+            Err(e) => Err(anyhow!(e)),
         });
 
         Ok(Box::pin(s))
     }
+
     pub async fn stats_stream_live(
         &self,
         id: &str,
@@ -98,8 +105,8 @@ impl DockerClient {
             .build();
 
         let s = self.inner.stats(id, Some(opts)).map(|it| {
-            it.map_err(|e| anyhow::anyhow!(e))
-                .and_then(|stat| serde_json::to_value(stat).map_err(|e| anyhow::anyhow!(e)))
+            it.map_err(|e| anyhow!(e))
+                .and_then(|stat| serde_json::to_value(stat).map_err(|e| anyhow!(e)))
         });
 
         Ok(Box::pin(s))
@@ -141,5 +148,35 @@ impl DockerClient {
         let opts = RemoveImageOptions { force, noprune };
         let _ = self.inner.remove_image(id, Some(opts), None).await?;
         Ok(())
+    }
+}
+
+fn resolve_docker_socket_path() -> Result<String> {
+    if let Ok(host) = env::var("DOCKER_HOST") {
+        if let Some(path) = host.strip_prefix("unix://") {
+            if Path::new(path).exists() {
+                return Ok(path.to_string());
+            }
+        } else if host.starts_with('/') && Path::new(&host).exists() {
+            return Ok(host);
+        }
+    }
+    #[cfg(unix)]
+    {
+        let uid = unsafe { geteuid() };
+        let cand = format!("/run/user/{}/docker.sock", uid);
+        if Path::new(&cand).exists() {
+            return Ok(cand);
+        }
+    }
+
+    let default = "/var/run/docker.sock";
+    if Path::new(default).exists() {
+        Ok(default.to_string())
+    } else {
+        Err(anyhow!(
+            "No Docker socket found. Tried DOCKER_HOST, /run/user/$UID/docker.sock and {}",
+            default
+        ))
     }
 }

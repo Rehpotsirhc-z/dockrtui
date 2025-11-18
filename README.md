@@ -49,7 +49,52 @@ dockrtui
 > Tested on Linux and WSL2.
 
 ---
+## 🔌 Docker Socket Detection
 
+
+
+DockrTUI automatically detects which Docker socket to use:
+
+
+
+**Priority:**
+
+
+
+1. `DOCKER_HOST` environment variable (same as Docker CLI)
+
+2. Rootless Docker socket: `/run/user/$UID/docker.sock`
+
+3. Classic rootful Docker socket: [docker.sock](http://_vscodecontentref_/0)
+
+
+
+This means DockrTUI works out-of-the-box with:
+
+
+
+- Docker Desktop
+
+- Docker rootless mode
+
+- Podman (via Docker API compatibility)
+
+- Custom Docker contexts (`docker context use …`)
+
+
+
+If you want to explicitly override the socket:
+
+
+
+```bash
+
+export DOCKER_HOST=unix:///run/user/1000/docker.sock
+
+dockrtui
+
+```
+---
 ## 🕹️ Usage
 
 Navigate everything with your keyboard:
