@@ -3,19 +3,19 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
-    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
+    text::{Line, Span},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
 };
 use serde_json::Value;
 
 use crate::ui::containers;
-use crate::ui::pull::{PullPopup, spawn_compose_pull};
+use crate::ui::pull::{PullPopup, spawn_compose_run};
 use crate::{docker::DockerClient, theme::Theme};
 use containers::util::{grad_sweep, truncate_middle};
 
@@ -25,11 +25,6 @@ struct ComposeProject {
     path: PathBuf,     // directory
     file_name: String, // compose file
     status: Option<String>,
-}
-
-/// Popups for the Compose tab
-enum Popup {
-    Output { title: String, content: String },
 }
 
 pub struct ComposeView {
@@ -44,7 +39,6 @@ pub struct ComposeView {
     searching: bool,
     query: String,
 
-    popup: Option<Popup>,
     pull: PullPopup,
     pub last_note: Option<(String, Color)>,
 }
@@ -60,7 +54,6 @@ impl ComposeView {
             last_scan: Instant::now(),
             searching: false,
             query: String::new(),
-            popup: None,
             pull: PullPopup::new(),
             last_note: None,
         };
@@ -72,16 +65,17 @@ impl ComposeView {
         self.tick = self.tick.wrapping_add(1);
         self.pull.on_tick();
         if let Some(ok) = self.pull.take_finished() {
+            let _ = self.scan_projects();
             if ok {
-                self.note_ok("✅ compose pull complete");
+                self.note_ok("✅ compose command complete");
             } else {
-                self.note_err("❌ compose pull finished with errors");
+                self.note_err("❌ compose command finished with errors");
             }
         }
     }
 
     pub fn is_modal_open(&self) -> bool {
-        self.popup.is_some() || self.pull.visible || self.searching
+        self.pull.visible || self.searching
     }
 
     /// For compatibility with Ui which calls `has_modal()`
@@ -309,33 +303,27 @@ impl ComposeView {
         self.rows.get(row_idx).cloned()
     }
 
-    fn compose_cmd(&self, proj: &ComposeProject, extra: &[&str]) -> Result<String> {
-        // docker compose -f <file> <extra...>
-        let mut args = vec!["compose", "-f", &proj.file_name];
-        args.extend(extra);
+    fn compose_targets(&self) -> Vec<(PathBuf, String, String)> {
+        self.current_project()
+            .map(|p| vec![(p.path, p.file_name, p.name)])
+            .unwrap_or_default()
+    }
 
-        let output = Command::new("docker")
-            .args(&args)
-            .current_dir(&proj.path)
-            .output()?;
-
-        let mut s = String::new();
-        if !output.stdout.is_empty() {
-            s.push_str(&String::from_utf8_lossy(&output.stdout));
+    fn run_compose(&mut self, verb: &str, subcommand: &[&str]) {
+        let targets = self.compose_targets();
+        if targets.is_empty() {
+            self.note_warn("⚠ no project selected");
+            return;
         }
-        if !output.stderr.is_empty() {
-            s.push_str(&String::from_utf8_lossy(&output.stderr));
-        }
-
-        if !output.status.success() {
-            return Err(anyhow!(
-                "docker compose failed (code={:?}): {}",
-                output.status.code(),
-                s
-            ));
-        }
-
-        Ok(s)
+        let title = if targets.len() == 1 {
+            format!("compose {verb} ({})", targets[0].2)
+        } else {
+            format!("compose {verb} ({} projects)", targets.len())
+        };
+        let sub = subcommand.iter().map(|s| s.to_string()).collect();
+        let (rx, handle) = spawn_compose_run(targets, sub);
+        self.pull.start(title, rx, handle);
+        self.note_ok(format!("⏬ compose {verb}…"));
     }
 
     /// Launch $EDITOR (or nano) on the selected compose file
@@ -356,17 +344,6 @@ impl ComposeView {
         // pull popup owns the keyboard while visible
         if self.pull.visible {
             self.pull.on_key(key);
-            return Ok(());
-        }
-
-        // popup
-        if let Some(Popup::Output { .. }) = &self.popup {
-            match key.code {
-                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
-                    self.popup = None;
-                }
-                _ => {}
-            }
             return Ok(());
         }
 
@@ -420,91 +397,19 @@ impl ComposeView {
             }
 
             // docker compose up -d
-            KeyCode::Char('u') => {
-                if let Some(p) = self.current_project() {
-                    match self.compose_cmd(&p, &["up", "-d"]) {
-                        Ok(out) => {
-                            self.note_ok(format!("🚀 compose up: {}", p.name));
-                            if !out.trim().is_empty() {
-                                self.popup = Some(Popup::Output {
-                                    title: format!("docker compose up -d ({})", p.name),
-                                    content: out,
-                                });
-                            }
-                        }
-                        Err(e) => self.note_err(format!("❌ compose up: {e}")),
-                    }
-                } else {
-                    self.note_warn("⚠ no project selected");
-                }
-            }
+            KeyCode::Char('u') => self.run_compose("up -d", &["up", "-d"]),
 
             // docker compose down
-            KeyCode::Char('d') => {
-                if let Some(p) = self.current_project() {
-                    match self.compose_cmd(&p, &["down"]) {
-                        Ok(out) => {
-                            self.note_ok(format!("🛑 compose down: {}", p.name));
-                            if !out.trim().is_empty() {
-                                self.popup = Some(Popup::Output {
-                                    title: format!("docker compose down ({})", p.name),
-                                    content: out,
-                                });
-                            }
-                        }
-                        Err(e) => self.note_err(format!("❌ compose down: {e}")),
-                    }
-                } else {
-                    self.note_warn("⚠ no project selected");
-                }
-            }
+            KeyCode::Char('d') => self.run_compose("down", &["down"]),
 
             // docker compose pull
-            KeyCode::Char('p') => {
-                if let Some(p) = self.current_project() {
-                    let (rx, handle) =
-                        spawn_compose_pull(p.path.clone(), p.file_name.clone(), p.name.clone());
-                    self.pull
-                        .start(format!("compose pull ({})", p.name), rx, handle);
-                    self.note_ok("⏬ compose pull…");
-                } else {
-                    self.note_warn("⚠ no project selected");
-                }
-            }
+            KeyCode::Char('p') => self.run_compose("pull", &["pull"]),
 
             // docker compose ps
-            KeyCode::Char('s') => {
-                if let Some(p) = self.current_project() {
-                    match self.compose_cmd(&p, &["ps"]) {
-                        Ok(out) => {
-                            self.popup = Some(Popup::Output {
-                                title: format!("docker compose ps ({})", p.name),
-                                content: out,
-                            });
-                        }
-                        Err(e) => self.note_err(format!("❌ compose ps: {e}")),
-                    }
-                } else {
-                    self.note_warn("⚠ no project selected");
-                }
-            }
+            KeyCode::Char('s') => self.run_compose("ps", &["ps"]),
 
             // docker compose logs --tail=50
-            KeyCode::Char('l') => {
-                if let Some(p) = self.current_project() {
-                    match self.compose_cmd(&p, &["logs", "--tail=50"]) {
-                        Ok(out) => {
-                            self.popup = Some(Popup::Output {
-                                title: format!("docker compose logs ({})", p.name),
-                                content: out,
-                            });
-                        }
-                        Err(e) => self.note_err(format!("❌ compose logs: {e}")),
-                    }
-                } else {
-                    self.note_warn("⚠ no project selected");
-                }
-            }
+            KeyCode::Char('l') => self.run_compose("logs", &["logs", "--tail=50"]),
 
             _ => {}
         }
@@ -611,38 +516,7 @@ impl ComposeView {
 
         f.render_stateful_widget(table, layout[1], &mut self.state);
 
-        // popup output
-        if let Some(Popup::Output { title, content }) = &self.popup {
-            let w = (area.width * 4 / 5).max(60);
-            let h = (area.height * 4 / 5).max(12);
-            let overlay = Rect {
-                x: area.x + (area.width - w) / 2,
-                y: area.y + (area.height - h) / 2,
-                width: w,
-                height: h,
-            };
-            f.render_widget(Clear, overlay);
-
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .title(self.theme.title(title))
-                .border_style(Style::default().fg(self.theme.accent));
-            f.render_widget(block, overlay);
-
-            let inner = Rect {
-                x: overlay.x + 1,
-                y: overlay.y + 1,
-                width: overlay.width - 2,
-                height: overlay.height - 2,
-            };
-
-            let para = Paragraph::new(Text::raw(content.clone()))
-                .wrap(Wrap { trim: false })
-                .alignment(Alignment::Left);
-            f.render_widget(para, inner);
-        }
-
-        // pull progress
+        // command output / progress
         self.pull.draw(f, area, self.theme, self.tick);
     }
 }

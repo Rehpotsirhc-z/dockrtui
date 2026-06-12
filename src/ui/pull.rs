@@ -608,63 +608,71 @@ fn format_pull_info(image: &str, info: &CreateImageInfo) -> Option<(Option<Strin
     }
 }
 
-/// Spawn `docker compose -f <file> pull` in `dir`, streaming its raw terminal
-/// output. `--ansi always` forces Compose's in-place progress rendering even
-/// though we capture it through a pipe; the popup's [`Screen`] replays it.
-pub fn spawn_compose_pull(
-    dir: PathBuf,
-    file_name: String,
-    project: String,
+/// Spawn `docker compose -f <file> <subcommand…>` for each project in turn,
+/// streaming the raw terminal output of all of them into one popup. `--ansi
+/// always` forces Compose's in-place progress rendering even though we capture
+/// it through a pipe; the popup's [`Screen`] replays it. Used for up/down/pull/
+/// ps/logs, on a single project or a whole multi-selection.
+pub fn spawn_compose_run(
+    projects: Vec<(PathBuf, String, String)>, // (dir, file_name, project_name)
+    subcommand: Vec<String>,
 ) -> (UnboundedReceiver<PullEvent>, JoinHandle<()>) {
     let (tx, rx) = mpsc::unbounded_channel();
     let handle = tokio::spawn(async move {
-        let _ = tx.send(PullEvent::Bytes(
-            format!("⏬ docker compose pull ({project})\r\n").into_bytes(),
-        ));
+        let label = subcommand.join(" ");
+        let mut had_err = false;
 
-        let mut child = match Command::new("docker")
-            .args(["compose", "--ansi", "always", "-f", &file_name, "pull"])
-            .current_dir(&dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = tx.send(PullEvent::Bytes(
-                    format!("❌ failed to start docker compose: {e}\r\n").into_bytes(),
-                ));
-                let _ = tx.send(PullEvent::Done {
-                    ok: false,
-                    summary: "failed to start".into(),
-                });
-                return;
+        for (dir, file_name, project) in &projects {
+            let _ = tx.send(PullEvent::Bytes(
+                format!("⏬ docker compose {label} ({project})\r\n").into_bytes(),
+            ));
+
+            let mut args: Vec<&str> = vec!["compose", "--ansi", "always", "-f", file_name];
+            args.extend(subcommand.iter().map(|s| s.as_str()));
+
+            let mut child = match Command::new("docker")
+                .args(&args)
+                .current_dir(dir)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    had_err = true;
+                    let _ = tx.send(PullEvent::Bytes(
+                        format!("❌ failed to start docker compose: {e}\r\n").into_bytes(),
+                    ));
+                    continue;
+                }
+            };
+
+            // Compose writes its progress to stderr; stdout is captured too in
+            // case a plain build/pull line shows up there.
+            let mut readers: Vec<JoinHandle<()>> = Vec::new();
+            if let Some(out) = child.stdout.take() {
+                readers.push(spawn_byte_reader(out, tx.clone()));
             }
-        };
+            if let Some(err) = child.stderr.take() {
+                readers.push(spawn_byte_reader(err, tx.clone()));
+            }
 
-        // Compose writes its progress to stderr; stdout is captured too in case
-        // a plain build/pull line shows up there.
-        let mut readers: Vec<JoinHandle<()>> = Vec::new();
-        if let Some(out) = child.stdout.take() {
-            readers.push(spawn_byte_reader(out, tx.clone()));
-        }
-        if let Some(err) = child.stderr.take() {
-            readers.push(spawn_byte_reader(err, tx.clone()));
-        }
-
-        let status = child.wait().await;
-        for r in readers {
-            let _ = r.await;
+            let status = child.wait().await;
+            for r in readers {
+                let _ = r.await;
+            }
+            if !status.map(|s| s.success()).unwrap_or(false) {
+                had_err = true;
+            }
         }
 
-        let ok = status.map(|s| s.success()).unwrap_or(false);
         let _ = tx.send(PullEvent::Done {
-            ok,
-            summary: if ok {
-                "pull complete".into()
-            } else {
+            ok: !had_err,
+            summary: if had_err {
                 "finished with errors".into()
+            } else {
+                format!("compose {label} complete")
             },
         });
     });

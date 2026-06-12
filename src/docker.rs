@@ -183,9 +183,7 @@ impl DockerClient {
 
     pub async fn remove_volume(&self, name: &str, force: bool) -> Result<()> {
         use bollard::query_parameters::{RemoveVolumeOptions, RemoveVolumeOptionsBuilder};
-        let opts: RemoveVolumeOptions = RemoveVolumeOptionsBuilder::default()
-            .force(force)
-            .build();
+        let opts: RemoveVolumeOptions = RemoveVolumeOptionsBuilder::default().force(force).build();
         self.inner.remove_volume(name, Some(opts)).await?;
         Ok(())
     }
@@ -198,6 +196,31 @@ impl DockerClient {
             .filters(&filters)
             .build();
         self.inner.prune_volumes(Some(opts)).await?;
+        Ok(())
+    }
+
+    // ================== NETWORKS ==================
+
+    pub async fn list_networks(&self) -> Result<Vec<bollard::models::Network>> {
+        use bollard::query_parameters::ListNetworksOptionsBuilder;
+        use std::collections::HashMap;
+        let filters: HashMap<String, Vec<String>> = HashMap::new();
+        let opts = ListNetworksOptionsBuilder::default()
+            .filters(&filters)
+            .build();
+        Ok(self.inner.list_networks(Some(opts)).await?)
+    }
+
+    pub async fn inspect_network(&self, id: &str) -> Result<bollard::models::Network> {
+        use bollard::query_parameters::InspectNetworkOptions;
+        Ok(self
+            .inner
+            .inspect_network(id, None::<InspectNetworkOptions>)
+            .await?)
+    }
+
+    pub async fn remove_network(&self, id: &str) -> Result<()> {
+        self.inner.remove_network(id).await?;
         Ok(())
     }
 }

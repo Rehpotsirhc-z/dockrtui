@@ -1,7 +1,6 @@
-use std::process::Command;
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
@@ -38,7 +37,7 @@ struct NetworkRow {
 }
 
 pub struct NetworksView {
-    _docker: DockerClient, // kept for symmetry, unused for now (we call the CLI)
+    docker: DockerClient,
     theme: Theme,
 
     rows: Vec<NetworkRow>,
@@ -63,7 +62,7 @@ pub struct NetworksView {
 impl NetworksView {
     pub async fn new(docker: DockerClient, theme: Theme) -> Result<Self> {
         let mut s = Self {
-            _docker: docker,
+            docker,
             theme,
             rows: Vec::new(),
             state: TableState::default(),
@@ -95,7 +94,7 @@ impl NetworksView {
     }
 
     async fn refresh(&mut self) -> Result<()> {
-        self.rows = self.fetch_networks()?;
+        self.rows = self.fetch_networks().await?;
 
         let vis_len = self.visible_indices().len();
         if self.state.selected().unwrap_or(0) >= vis_len {
@@ -107,41 +106,17 @@ impl NetworksView {
         Ok(())
     }
 
-    fn fetch_networks(&self) -> Result<Vec<NetworkRow>> {
-        let output = Command::new("docker")
-            .args([
-                "network",
-                "ls",
-                "--format",
-                "{{.ID}}\t{{.Name}}\t{{.Driver}}\t{{.Scope}}",
-            ])
-            .output()?;
-
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!("docker network ls failed: {err}"));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut out = Vec::new();
-
-        for line in stdout.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() < 4 {
-                continue;
-            }
-            out.push(NetworkRow {
-                id: parts[0].to_string(),
-                name: parts[1].to_string(),
-                driver: parts[2].to_string(),
-                scope: parts[3].to_string(),
-            });
-        }
-
+    async fn fetch_networks(&self) -> Result<Vec<NetworkRow>> {
+        let nets = self.docker.list_networks().await?;
+        let out = nets
+            .into_iter()
+            .map(|n| NetworkRow {
+                id: n.id.unwrap_or_default(),
+                name: n.name.unwrap_or_default(),
+                driver: n.driver.unwrap_or_default(),
+                scope: n.scope.unwrap_or_default(),
+            })
+            .collect();
         Ok(out)
     }
 
@@ -238,7 +213,7 @@ impl NetworksView {
             // inspect (docker network inspect)
             KeyCode::Char('i') => {
                 if let Some((id, _name)) = self.current_id_and_name() {
-                    match self.inspect_network_cli(&id) {
+                    match self.inspect_network_text(&id).await {
                         Ok(txt) => {
                             self.popup = Some(Popup::Inspect(txt));
                         }
@@ -268,52 +243,18 @@ impl NetworksView {
         Ok(())
     }
 
-    fn inspect_network_cli(&self, id: &str) -> Result<String> {
-        let output = Command::new("docker")
-            .args(["network", "inspect", id])
-            .output()?;
-
-        let mut s = String::new();
-        if !output.stdout.is_empty() {
-            s.push_str(&String::from_utf8_lossy(&output.stdout));
-        }
-        if !output.stderr.is_empty() {
-            s.push_str(&String::from_utf8_lossy(&output.stderr));
-        }
-
-        if !output.status.success() {
-            return Err(anyhow!(
-                "docker network inspect failed (code={:?}): {}",
-                output.status.code(),
-                s
-            ));
-        }
-
-        Ok(s)
+    async fn inspect_network_text(&self, id: &str) -> Result<String> {
+        let net = self.docker.inspect_network(id).await?;
+        Ok(serde_json::to_string_pretty(&net)?)
     }
 
     async fn delete_network(&mut self, id: &str, name: &str) -> Result<()> {
-        let output = Command::new("docker")
-            .args(["network", "rm", id])
-            .output()?;
-
-        let mut s = String::new();
-        if !output.stdout.is_empty() {
-            s.push_str(&String::from_utf8_lossy(&output.stdout));
-        }
-        if !output.stderr.is_empty() {
-            s.push_str(&String::from_utf8_lossy(&output.stderr));
-        }
-
-        if output.status.success() {
-            self.note_ok(format!("🗑 removed: {name}"));
-            let _ = self.refresh().await;
-        } else {
-            self.note_err(format!(
-                "❌ network removal failed (code={:?}): {}",
-                output.status.code(),
-                s
-            ));
+        match self.docker.remove_network(id).await {
+            Ok(()) => {
+                self.note_ok(format!("🗑 removed: {name}"));
+                let _ = self.refresh().await;
+            }
+            Err(e) => self.note_err(format!("❌ network removal failed: {e}")),
         }
         Ok(())
     }
