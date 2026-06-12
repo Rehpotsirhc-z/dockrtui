@@ -476,7 +476,7 @@ impl ComposeView {
         let mut spans = vec![Span::raw(" ")];
         spans.extend(title_line.spans.clone());
         spans.push(Span::raw(
-            "  j/k ↑/↓ • /: search • r/F5: rescan • u: up -d • d: down • p: pull • s: ps • l: logs • x: select • C: clear • e: edit",
+            "  u: up -d • d: down • p: pull • s: ps • l: logs • x: select • C: clear • e: edit",
         ));
 
         if !self.selected_ids.is_empty() {

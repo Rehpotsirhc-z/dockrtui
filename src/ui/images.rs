@@ -449,7 +449,7 @@ impl ImagesView {
         let mut spans = vec![Span::raw(" ")];
         spans.extend(title_line.spans.clone());
         spans.push(Span::raw(
-            "  j/k ↑/↓ • /: search • a: all/dangling • o/O: sort • r/F5: refresh • i: inspect • d: delete • x: select • p: pull • S: save",
+            "  a: all/dangling • o/O: sort • i: inspect • x: select • C: clear • p: pull • d: delete • S: save",
         ));
 
         if !self.selected_ids.is_empty() {

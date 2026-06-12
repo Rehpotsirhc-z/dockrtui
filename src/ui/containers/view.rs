@@ -637,7 +637,7 @@ impl ContainersView {
         let mut hint = vec![Span::raw(" ")];
         hint.extend(title_line.spans);
         hint.push(Span::raw(
-            "  j/k ↑/↓ • /: search • o/O: sort • space/↵: start/stop • R: restart • p/P: pause • b: shell • x: select • A: apply • C: clear • i: inspect • S: save • d/D: delete "
+            "  a: all/running • o/O: sort • space/↵: start/stop • R: restart • p/P: pause • b: shell • x: select • A: apply • C: clear • i: inspect • l: logs • t: stats • S: save • d/D: delete "
         ));
         if !self.query.is_empty() {
             hint.push(Span::styled(

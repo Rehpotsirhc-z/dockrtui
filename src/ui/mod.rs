@@ -292,34 +292,12 @@ impl Ui {
         }
     }
 
-    fn footer_help_for_tab(&self) -> String {
-        match self.tab {
-            Tab::Containers => String::from(
-                "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
-                 • a: all/running • r/F5: refresh • Enter/Space: start/stop \
-                 • R: restart • l: logs • t: stats",
-            ),
-            Tab::Images => String::from(
-                "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
-                 • /: search • a: all/dangling • o/O: sort • r/F5: refresh \
-                 • i: inspect • d: delete • x: select • C: clear • p: pull • S: save visible list",
-            ),
-            Tab::Networks => String::from(
-                "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
-                 • /: search • a: all/user-defined • o/O: sort • r/F5: refresh \
-                 • i: inspect • d: delete",
-            ),
-            Tab::Compose => String::from(
-                "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
-                 • /: search • r/F5: rescan • u: up -d • d: down • p: pull • s: ps • l: logs \
-                 • x: select • C: clear",
-            ),
-            Tab::Volumes => String::from(
-                "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
-                 • /: search • o/O: sort • r/F5: refresh \
-                 • i: inspect • d: delete • p: prune unused",
-            ),
-        }
+    /// Footer "Quick help": only the keys that behave the same on every tab.
+    /// Tab-specific actions live in each view's own top bar.
+    fn footer_help(&self) -> String {
+        String::from(
+            "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move • /: search • r/F5: refresh",
+        )
     }
 
     pub fn draw(&mut self, f: &mut Frame, area: Rect) {
@@ -374,7 +352,7 @@ impl Ui {
         self.stats.draw(f, chunks[1], self.theme);
 
         // footer
-        let mut text = self.footer_help_for_tab();
+        let mut text = self.footer_help();
         let mut style = Style::default().fg(self.theme.fg);
 
         if let Some((msg, col)) = self.toasts.render() {

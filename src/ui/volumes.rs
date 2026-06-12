@@ -1,18 +1,19 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use bollard::models::Volume;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::{Constraint, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
 };
 
 use crate::ui::containers;
 use crate::{docker::DockerClient, theme::Theme};
-use containers::util::{alt_row_style, selected_row_style, truncate_middle};
+use containers::util::{alt_row_style, grad_sweep, selected_row_style, truncate_middle};
 
 /// Sort keys available for volumes
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -335,9 +336,56 @@ impl VolumesView {
 
     pub fn draw(&mut self, f: &mut Frame, area: Rect) {
         let theme = self.theme;
-        let vis = self.visible_indices();
 
-        // Build table rows
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(1)])
+            .split(area);
+
+        // top bar
+        let spinners = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        let spin = spinners[(self.tick as usize) % spinners.len()];
+        let just_refreshed = self.last_refresh.elapsed() < Duration::from_millis(800);
+
+        let phase = (self.tick % 120) as f32 / 120.0;
+        let title_line = grad_sweep(" Volumes ", theme.accent, theme.accent_alt, phase);
+
+        let sort_name = match self.sort_key {
+            SortKey::Name => "name",
+            SortKey::Driver => "driver",
+            SortKey::Mountpoint => "mountpoint",
+            SortKey::CreatedAt => "created",
+        };
+        let arrow = if self.sort_asc { "↑" } else { "↓" };
+
+        let mut spans = vec![Span::raw(" ")];
+        spans.extend(title_line.spans.clone());
+        spans.push(Span::raw(
+            "  o/O: sort • i: inspect • d: delete • p: prune unused",
+        ));
+        if !self.query.is_empty() {
+            spans.push(Span::styled(
+                format!(" | filter: '{}'", self.query),
+                Style::default().fg(theme.accent),
+            ));
+        }
+        spans.push(Span::styled(
+            format!(" | sort: {sort_name}{arrow}"),
+            Style::default().fg(theme.muted),
+        ));
+        if just_refreshed {
+            spans.push(Span::styled(
+                format!(" {spin}"),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        let header_bar = Paragraph::new(Line::from(spans)).block(theme.block("Volumes"));
+        f.render_widget(header_bar, layout[0]);
+
+        // table
+        let vis = self.visible_indices();
         let header_cells = ["Name", "Driver", "Mountpoint", "Scope"].iter().map(|h| {
             Cell::from(*h).style(
                 Style::default()
@@ -371,21 +419,6 @@ impl VolumesView {
             row
         });
 
-        let mut title_text = format!(" Volumes ({}) ", self.rows.len());
-        if !self.query.is_empty() {
-            title_text.push_str(&format!("filtered: {} ", vis.len()));
-        }
-        let sort_key_str = match self.sort_key {
-            SortKey::Name => "name",
-            SortKey::Driver => "driver",
-            SortKey::Mountpoint => "mountpoint",
-            SortKey::CreatedAt => "created",
-        };
-        let sort_dir = if self.sort_asc { "↑" } else { "↓" };
-        title_text.push_str(&format!(" • sort: {}{} ", sort_key_str, sort_dir));
-
-        let table_block = theme.block(&title_text);
-
         let table = Table::new(
             rows_iter,
             [
@@ -396,10 +429,15 @@ impl VolumesView {
             ],
         )
         .header(header)
-        .block(table_block)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.muted))
+                .title(theme.title("Volumes")),
+        )
         .highlight_symbol("❯ ");
 
-        f.render_stateful_widget(table, area, &mut self.state);
+        f.render_stateful_widget(table, layout[1], &mut self.state);
 
         // Overlays: popups
         if let Some(p) = &self.popup {

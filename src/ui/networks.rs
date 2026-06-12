@@ -365,7 +365,7 @@ impl NetworksView {
         let mut spans = vec![Span::raw(" ")];
         spans.extend(title_line.spans.clone());
         spans.push(Span::raw(
-            "  j/k ↑/↓ • /: search • a: all/user • o/O: sort • r/F5: refresh • i: inspect • d: delete",
+            "  a: all/user • o/O: sort • i: inspect • d: delete",
         ));
 
         if !self.query.is_empty() {
