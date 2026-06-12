@@ -311,7 +311,8 @@ impl Ui {
             ),
             Tab::Compose => String::from(
                 "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
-                 • /: search • r/F5: rescan • u: up -d • d: down • p: pull • s: ps • l: logs",
+                 • /: search • r/F5: rescan • u: up -d • d: down • p: pull • s: ps • l: logs \
+                 • x: select • C: clear",
             ),
             Tab::Volumes => String::from(
                 "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
@@ -332,7 +333,13 @@ impl Ui {
             ])
             .split(area);
 
-        let titles = [" Containers", " Images", " Networks", " Compose", " Volumes"];
+        let titles = [
+            " Containers",
+            " Images",
+            " Networks",
+            " Compose",
+            " Volumes",
+        ];
 
         let selected_idx = match self.tab {
             Tab::Containers => 0,

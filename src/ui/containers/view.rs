@@ -100,8 +100,7 @@ impl ContainersView {
 
     pub async fn refresh(&mut self) -> Result<()> {
         self.rows = self.docker.list_containers(self.all).await?;
-        // clamp selection to filtered view, and select the first row on the
-        // very first load so actions work without pressing j/k first.
+        // clamp selection to filtered view
         let vis_len = self.visible_indices().len();
         match self.state.selected() {
             Some(sel) if sel >= vis_len => {

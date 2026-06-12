@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -39,6 +40,9 @@ pub struct ComposeView {
     searching: bool,
     query: String,
 
+    // multi-select (project keys) so up/down/pull can act on several at once
+    selected_ids: HashSet<String>,
+
     pull: PullPopup,
     pub last_note: Option<(String, Color)>,
 }
@@ -54,6 +58,7 @@ impl ComposeView {
             last_scan: Instant::now(),
             searching: false,
             query: String::new(),
+            selected_ids: HashSet::new(),
             pull: PullPopup::new(),
             last_note: None,
         };
@@ -307,10 +312,26 @@ impl ComposeView {
         self.rows.get(row_idx).cloned()
     }
 
+    /// Stable identifier for a project (used by the multi-select set).
+    fn project_key(p: &ComposeProject) -> String {
+        p.path.join(&p.file_name).to_string_lossy().into_owned()
+    }
+
+    /// Build the `(dir, file_name, name)` targets for a compose action: the whole
+    /// multi-selection if any, otherwise just the current row.
     fn compose_targets(&self) -> Vec<(PathBuf, String, String)> {
-        self.current_project()
-            .map(|p| vec![(p.path, p.file_name, p.name)])
-            .unwrap_or_default()
+        if !self.selected_ids.is_empty() {
+            self.visible_indices()
+                .iter()
+                .map(|&idx| &self.rows[idx])
+                .filter(|p| self.selected_ids.contains(&Self::project_key(p)))
+                .map(|p| (p.path.clone(), p.file_name.clone(), p.name.clone()))
+                .collect()
+        } else {
+            self.current_project()
+                .map(|p| vec![(p.path, p.file_name, p.name)])
+                .unwrap_or_default()
+        }
     }
 
     fn run_compose(&mut self, verb: &str, subcommand: &[&str]) {
@@ -400,6 +421,21 @@ impl ComposeView {
                 self.edit_current_file();
             }
 
+            // multi-select: toggle current, clear all
+            KeyCode::Char('x') => {
+                if let Some(p) = self.current_project() {
+                    let key = Self::project_key(&p);
+                    if !self.selected_ids.remove(&key) {
+                        self.selected_ids.insert(key);
+                    }
+                } else {
+                    self.note_warn("⚠ no project selected");
+                }
+            }
+            KeyCode::Char('C') => {
+                self.selected_ids.clear();
+            }
+
             // docker compose up -d
             KeyCode::Char('u') => self.run_compose("up -d", &["up", "-d"]),
 
@@ -440,9 +476,15 @@ impl ComposeView {
         let mut spans = vec![Span::raw(" ")];
         spans.extend(title_line.spans.clone());
         spans.push(Span::raw(
-            "  j/k ↑/↓ • /: search • r/F5: rescan • u: up -d • d: down • p: pull • s: ps • l: logs • e: edit",
+            "  j/k ↑/↓ • /: search • r/F5: rescan • u: up -d • d: down • p: pull • s: ps • l: logs • x: select • C: clear • e: edit",
         ));
 
+        if !self.selected_ids.is_empty() {
+            spans.push(Span::styled(
+                format!(" | selected: {}", self.selected_ids.len()),
+                Style::default().fg(theme.accent),
+            ));
+        }
         if !self.query.is_empty() {
             spans.push(Span::styled(
                 format!(" | filter: '{}'", self.query),
@@ -474,7 +516,12 @@ impl ComposeView {
         let rows = vis.iter().enumerate().map(|(i, &idx)| {
             let p = &self.rows[idx];
 
-            let proj = p.name.clone();
+            let checkbox = if self.selected_ids.contains(&Self::project_key(p)) {
+                "▣ "
+            } else {
+                "▢ "
+            };
+            let proj = format!("{checkbox}{}", p.name);
             let status = p.status.clone().unwrap_or_else(|| "-".into());
             let file = p.file_name.clone();
             let path_str = truncate_middle(p.path.to_string_lossy().as_ref(), 60);
@@ -501,7 +548,7 @@ impl ComposeView {
         });
 
         let widths = [
-            Constraint::Length(24),
+            Constraint::Length(26),
             Constraint::Length(12),
             Constraint::Length(20),
             Constraint::Percentage(60),
