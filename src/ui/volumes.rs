@@ -12,7 +12,7 @@ use ratatui::{
 
 use crate::ui::containers;
 use crate::{docker::DockerClient, theme::Theme};
-use containers::util::truncate_middle;
+use containers::util::{alt_row_style, selected_row_style, truncate_middle};
 
 /// Sort keys available for volumes
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -286,7 +286,8 @@ impl VolumesView {
 
     fn visible_indices(&self) -> Vec<usize> {
         let q = self.query.to_lowercase();
-        self.rows
+        let mut idx: Vec<usize> = self
+            .rows
             .iter()
             .enumerate()
             .filter(|(_i, vol)| {
@@ -298,7 +299,20 @@ impl VolumesView {
                     || vol.mountpoint.to_lowercase().contains(&q)
             })
             .map(|(i, _)| i)
-            .collect()
+            .collect();
+
+        idx.sort_by(|&a, &b| {
+            let va = &self.rows[a];
+            let vb = &self.rows[b];
+            let cmp = match self.sort_key {
+                SortKey::Name => va.name.cmp(&vb.name),
+                SortKey::Driver => va.driver.cmp(&vb.driver),
+                SortKey::Mountpoint => va.mountpoint.cmp(&vb.mountpoint),
+                SortKey::CreatedAt => va.created_at.cmp(&vb.created_at),
+            };
+            if self.sort_asc { cmp } else { cmp.reverse() }
+        });
+        idx
     }
 
     fn current_name(&self) -> Option<String> {
@@ -320,35 +334,21 @@ impl VolumesView {
     }
 
     pub fn draw(&mut self, f: &mut Frame, area: Rect) {
+        let theme = self.theme;
         let vis = self.visible_indices();
-
-        // Apply sorting
-        let mut sorted_vis = vis.clone();
-        sorted_vis.sort_by(|&a, &b| {
-            let vol_a = &self.rows[a];
-            let vol_b = &self.rows[b];
-
-            let cmp = match self.sort_key {
-                SortKey::Name => vol_a.name.cmp(&vol_b.name),
-                SortKey::Driver => vol_a.driver.cmp(&vol_b.driver),
-                SortKey::Mountpoint => vol_a.mountpoint.cmp(&vol_b.mountpoint),
-                SortKey::CreatedAt => vol_a.created_at.cmp(&vol_b.created_at),
-            };
-
-            if self.sort_asc { cmp } else { cmp.reverse() }
-        });
 
         // Build table rows
         let header_cells = ["Name", "Driver", "Mountpoint", "Scope"].iter().map(|h| {
             Cell::from(*h).style(
                 Style::default()
-                    .fg(self.theme.accent)
+                    .fg(theme.muted)
                     .add_modifier(Modifier::BOLD),
             )
         });
-        let header = Row::new(header_cells).height(1).bottom_margin(1);
+        let header = Row::new(header_cells).height(1);
 
-        let rows_iter = sorted_vis.iter().map(|&idx| {
+        let selected_row = self.state.selected().unwrap_or(0);
+        let rows_iter = vis.iter().enumerate().map(|(i, &idx)| {
             let vol = &self.rows[idx];
 
             let name_cell = Cell::from(truncate_middle(&vol.name, 30));
@@ -361,15 +361,20 @@ impl VolumesView {
                 .unwrap_or_else(|| "N/A".to_string());
             let scope_cell = Cell::from(scope_str);
 
-            Row::new(vec![name_cell, driver_cell, mountpoint_cell, scope_cell]).height(1)
+            let mut row =
+                Row::new(vec![name_cell, driver_cell, mountpoint_cell, scope_cell]).height(1);
+            if i == selected_row {
+                row = row.style(selected_row_style(theme, self.tick));
+            } else if i % 2 == 1 {
+                row = row.style(alt_row_style());
+            }
+            row
         });
 
         let mut title_text = format!(" Volumes ({}) ", self.rows.len());
         if !self.query.is_empty() {
-            title_text.push_str(&format!("filtered: {} ", sorted_vis.len()));
+            title_text.push_str(&format!("filtered: {} ", vis.len()));
         }
-
-        // sort indicator
         let sort_key_str = match self.sort_key {
             SortKey::Name => "name",
             SortKey::Driver => "driver",
@@ -379,7 +384,7 @@ impl VolumesView {
         let sort_dir = if self.sort_asc { "↑" } else { "↓" };
         title_text.push_str(&format!(" • sort: {}{} ", sort_key_str, sort_dir));
 
-        let table_block = self.theme.block(&title_text);
+        let table_block = theme.block(&title_text);
 
         let table = Table::new(
             rows_iter,
@@ -392,11 +397,7 @@ impl VolumesView {
         )
         .header(header)
         .block(table_block)
-        .row_highlight_style(
-            Style::default()
-                .fg(self.theme.accent)
-                .add_modifier(Modifier::REVERSED),
-        );
+        .highlight_symbol("❯ ");
 
         f.render_stateful_widget(table, area, &mut self.state);
 

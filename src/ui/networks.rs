@@ -12,7 +12,7 @@ use ratatui::{
 
 use crate::ui::containers;
 use crate::{docker::DockerClient, theme::Theme};
-use containers::util::{grad_sweep, truncate_middle};
+use containers::util::{alt_row_style, grad_sweep, selected_row_style, truncate_middle};
 
 /// Available sort keys for networks
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -422,14 +422,9 @@ impl NetworksView {
             ]);
 
             if i == selected_row {
-                row = row.style(
-                    Style::default()
-                        .bg(Color::Rgb(24, 26, 30))
-                        .fg(theme.accent)
-                        .add_modifier(Modifier::BOLD),
-                );
+                row = row.style(selected_row_style(theme, self.tick));
             } else if i % 2 == 1 {
-                row = row.style(Style::default().bg(Color::Rgb(16, 18, 20)));
+                row = row.style(alt_row_style());
             }
 
             row

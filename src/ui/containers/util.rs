@@ -1,7 +1,22 @@
 use ratatui::{
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
 };
+
+use crate::theme::Theme;
+
+pub fn selected_row_style(theme: Theme, tick: u64) -> Style {
+    let breath = ((tick % 40) as f32 / 40.0 * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+    let sel_bg = lerp(theme.accent_alt, theme.accent, breath);
+    Style::default()
+        .bg(sel_bg)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD)
+}
+
+pub fn alt_row_style() -> Style {
+    Style::default().bg(Color::Rgb(16, 18, 20))
+}
 
 pub fn lerp(a: Color, b: Color, t: f32) -> Color {
     let to_u8 = |x: f32| (x.round() as i32).clamp(0, 255) as u8;

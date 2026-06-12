@@ -18,7 +18,7 @@ use super::actions::{self, ActionAnim, ActionKind, BarPhase};
 use super::progress::fancy_bar_line;
 use super::rocket::{render_rocket_scene_vertical, rocket_down_from_bar, rocket_up_from_bar};
 use super::shell::{ShellEvent, ShellPopup};
-use super::util::{grad_sweep, lerp, truncate_middle};
+use super::util::{alt_row_style, grad_sweep, lerp, selected_row_style, truncate_middle};
 
 /// Available sort keys
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -754,17 +754,9 @@ impl ContainersView {
             ]);
 
             if i == selected_row {
-                let breath =
-                    ((self.tick % 40) as f32 / 40.0 * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-                let sel_bg = lerp(theme.accent_alt, theme.accent, breath);
-                row = row.style(
-                    Style::default()
-                        .bg(sel_bg)
-                        .fg(Color::Black)
-                        .add_modifier(Modifier::BOLD),
-                );
+                row = row.style(selected_row_style(theme, self.tick));
             } else if i % 2 == 1 {
-                row = row.style(Style::default().bg(Color::Rgb(16, 18, 20)));
+                row = row.style(alt_row_style());
             }
             row
         });
