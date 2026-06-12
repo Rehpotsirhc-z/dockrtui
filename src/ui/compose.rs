@@ -119,9 +119,13 @@ impl ComposeView {
 
         // clamp selection
         let len = self.visible_indices().len();
-        if self.state.selected().unwrap_or(0) >= len {
-            self.state
-                .select(if len == 0 { None } else { Some(len - 1) });
+        match self.state.selected() {
+            Some(sel) if sel >= len => {
+                self.state
+                    .select(if len == 0 { None } else { Some(len - 1) });
+            }
+            None if len > 0 => self.state.select(Some(0)),
+            _ => {}
         }
 
         Ok(())

@@ -1,4 +1,4 @@
-use std::time::{Instant};
+use std::time::Instant;
 
 use anyhow::Result;
 use bollard::models::Volume;
@@ -12,7 +12,7 @@ use ratatui::{
 
 use crate::ui::containers;
 use crate::{docker::DockerClient, theme::Theme};
-use containers::util::{ truncate_middle};
+use containers::util::truncate_middle;
 
 /// Sort keys available for volumes
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,10 +88,16 @@ impl VolumesView {
 
         // realign selection on filtered view
         let vis_len = self.visible_indices().len();
-        if self.state.selected().unwrap_or(0) >= vis_len {
-            let len = vis_len.saturating_sub(1);
-            self.state
-                .select(if vis_len == 0 { None } else { Some(len) });
+        match self.state.selected() {
+            Some(sel) if sel >= vis_len => {
+                self.state.select(if vis_len == 0 {
+                    None
+                } else {
+                    Some(vis_len - 1)
+                });
+            }
+            None if vis_len > 0 => self.state.select(Some(0)),
+            _ => {}
         }
         self.last_refresh = Instant::now();
         Ok(())
@@ -106,8 +112,7 @@ impl VolumesView {
                         self.popup = None;
                     }
                     KeyCode::Enter | KeyCode::Char('y') => {
-                        let name = if let Some(Popup::ConfirmDelete { name }) = self.popup.take()
-                        {
+                        let name = if let Some(Popup::ConfirmDelete { name }) = self.popup.take() {
                             name
                         } else {
                             return Ok(());
@@ -330,17 +335,17 @@ impl VolumesView {
                 SortKey::CreatedAt => vol_a.created_at.cmp(&vol_b.created_at),
             };
 
-            if self.sort_asc {
-                cmp
-            } else {
-                cmp.reverse()
-            }
+            if self.sort_asc { cmp } else { cmp.reverse() }
         });
 
         // Build table rows
-        let header_cells = ["Name", "Driver", "Mountpoint", "Scope"]
-            .iter()
-            .map(|h| Cell::from(*h).style(Style::default().fg(self.theme.accent).add_modifier(Modifier::BOLD)));
+        let header_cells = ["Name", "Driver", "Mountpoint", "Scope"].iter().map(|h| {
+            Cell::from(*h).style(
+                Style::default()
+                    .fg(self.theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            )
+        });
         let header = Row::new(header_cells).height(1).bottom_margin(1);
 
         let rows_iter = sorted_vis.iter().map(|&idx| {
@@ -349,7 +354,11 @@ impl VolumesView {
             let name_cell = Cell::from(truncate_middle(&vol.name, 30));
             let driver_cell = Cell::from(vol.driver.as_str());
             let mountpoint_cell = Cell::from(truncate_middle(&vol.mountpoint, 40));
-            let scope_str = vol.scope.as_ref().map(|s| format!("{:?}", s)).unwrap_or_else(|| "N/A".to_string());
+            let scope_str = vol
+                .scope
+                .as_ref()
+                .map(|s| format!("{:?}", s))
+                .unwrap_or_else(|| "N/A".to_string());
             let scope_cell = Cell::from(scope_str);
 
             Row::new(vec![name_cell, driver_cell, mountpoint_cell, scope_cell]).height(1)
@@ -431,7 +440,10 @@ impl VolumesView {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(self.theme.warn));
 
-        let text = format!("Delete volume: {}?\n\nPress [y] to confirm, [n] to cancel", name);
+        let text = format!(
+            "Delete volume: {}?\n\nPress [y] to confirm, [n] to cancel",
+            name
+        );
         let para = Paragraph::new(text)
             .block(block)
             .wrap(Wrap { trim: true })
