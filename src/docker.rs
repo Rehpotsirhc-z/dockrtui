@@ -144,6 +144,20 @@ impl DockerClient {
         Ok(self.inner.inspect_image(id).await?)
     }
 
+    pub fn pull_stream(
+        &self,
+        image: &str,
+    ) -> Pin<Box<dyn Stream<Item = anyhow::Result<bollard::models::CreateImageInfo>> + Send>> {
+        let opts = bollard::query_parameters::CreateImageOptionsBuilder::default()
+            .from_image(image)
+            .build();
+        let s = self
+            .inner
+            .create_image(Some(opts), None, None)
+            .map(|res| res.map_err(|e| anyhow!(e)));
+        Box::pin(s)
+    }
+
     pub async fn remove_image(&self, id: &str, force: bool, noprune: bool) -> Result<()> {
         let opts = RemoveImageOptions { force, noprune };
         let _ = self.inner.remove_image(id, Some(opts), None).await?;

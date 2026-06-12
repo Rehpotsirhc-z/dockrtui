@@ -15,6 +15,7 @@ use ratatui::{
 use serde_json::Value;
 
 use crate::ui::containers;
+use crate::ui::pull::{PullPopup, spawn_compose_pull};
 use crate::{docker::DockerClient, theme::Theme};
 use containers::util::{grad_sweep, truncate_middle};
 
@@ -44,6 +45,7 @@ pub struct ComposeView {
     query: String,
 
     popup: Option<Popup>,
+    pull: PullPopup,
     pub last_note: Option<(String, Color)>,
 }
 
@@ -59,6 +61,7 @@ impl ComposeView {
             searching: false,
             query: String::new(),
             popup: None,
+            pull: PullPopup::new(),
             last_note: None,
         };
         s.scan_projects()?;
@@ -67,10 +70,18 @@ impl ComposeView {
 
     pub fn on_tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
+        self.pull.on_tick();
+        if let Some(ok) = self.pull.take_finished() {
+            if ok {
+                self.note_ok("✅ compose pull complete");
+            } else {
+                self.note_err("❌ compose pull finished with errors");
+            }
+        }
     }
 
     pub fn is_modal_open(&self) -> bool {
-        self.popup.is_some() || self.searching
+        self.popup.is_some() || self.pull.visible || self.searching
     }
 
     /// For compatibility with Ui which calls `has_modal()`
@@ -342,6 +353,12 @@ impl ComposeView {
     }
 
     pub async fn on_key(&mut self, key: KeyEvent) -> Result<()> {
+        // pull popup owns the keyboard while visible
+        if self.pull.visible {
+            self.pull.on_key(key);
+            return Ok(());
+        }
+
         // popup
         if let Some(Popup::Output { .. }) = &self.popup {
             match key.code {
@@ -442,6 +459,19 @@ impl ComposeView {
                 }
             }
 
+            // docker compose pull
+            KeyCode::Char('p') => {
+                if let Some(p) = self.current_project() {
+                    let (rx, handle) =
+                        spawn_compose_pull(p.path.clone(), p.file_name.clone(), p.name.clone());
+                    self.pull
+                        .start(format!("compose pull ({})", p.name), rx, handle);
+                    self.note_ok("⏬ compose pull…");
+                } else {
+                    self.note_warn("⚠ no project selected");
+                }
+            }
+
             // docker compose ps
             KeyCode::Char('s') => {
                 if let Some(p) = self.current_project() {
@@ -501,7 +531,7 @@ impl ComposeView {
         let mut spans = vec![Span::raw(" ")];
         spans.extend(title_line.spans.clone());
         spans.push(Span::raw(
-            "  j/k ↑/↓ • /: search • r/F5: rescan • u: up -d • d: down • s: ps • l: logs • e: edit",
+            "  j/k ↑/↓ • /: search • r/F5: rescan • u: up -d • d: down • p: pull • s: ps • l: logs • e: edit",
         ));
 
         if !self.query.is_empty() {
@@ -611,6 +641,9 @@ impl ComposeView {
                 .alignment(Alignment::Left);
             f.render_widget(para, inner);
         }
+
+        // pull progress
+        self.pull.draw(f, area, self.theme, self.tick);
     }
 }
 

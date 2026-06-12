@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -16,6 +17,7 @@ use ratatui::{
 use chrono::{TimeZone, Utc};
 
 use crate::ui::containers;
+use crate::ui::pull::{PullPopup, spawn_image_pull};
 use crate::{docker::DockerClient, theme::Theme};
 use containers::util::{grad_sweep, truncate_middle};
 
@@ -52,7 +54,11 @@ pub struct ImagesView {
     sort_key: SortKey,
     sort_asc: bool,
 
+    // multi-select
+    selected_ids: HashSet<String>,
+
     popup: Option<Popup>,
+    pull: PullPopup,
 }
 
 impl ImagesView {
@@ -70,7 +76,9 @@ impl ImagesView {
             dangling_only: false,
             sort_key: SortKey::Repo,
             sort_asc: true,
+            selected_ids: HashSet::new(),
             popup: None,
+            pull: PullPopup::new(),
         };
         s.refresh().await?;
         Ok(s)
@@ -78,6 +86,24 @@ impl ImagesView {
 
     pub fn on_tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
+        self.pull.on_tick();
+        if let Some(ok) = self.pull.take_finished() {
+            // New layers/tags may now exist locally: refresh the listing.
+            let _ = futures_lite::future::block_on(self.refresh());
+            if ok {
+                self.note_ok("✅ pull complete");
+            } else {
+                self.note_err("❌ pull finished with errors");
+            }
+        }
+    }
+
+    pub fn has_modal(&self) -> bool {
+        self.popup.is_some() || self.pull.visible
+    }
+
+    pub fn is_modal_open(&self) -> bool {
+        self.has_modal() || self.searching
     }
 
     async fn refresh(&mut self) -> Result<()> {
@@ -96,6 +122,12 @@ impl ImagesView {
     }
 
     pub async fn on_key(&mut self, key: KeyEvent) -> Result<()> {
+        // 0) pull popup open -> it owns the keyboard
+        if self.pull.visible {
+            self.pull.on_key(key);
+            return Ok(());
+        }
+
         // 1) popup open -> it has priority
         if let Some(p) = &mut self.popup {
             match p {
@@ -213,6 +245,37 @@ impl ImagesView {
                 }
             }
 
+            // multi-select
+            KeyCode::Char('x') => {
+                if let Some((id, _name)) = self.current_id_and_name() {
+                    if !self.selected_ids.remove(&id) {
+                        self.selected_ids.insert(id);
+                    }
+                } else {
+                    self.note_warn("⚠ no image selected");
+                }
+            }
+            KeyCode::Char('C') => {
+                self.selected_ids.clear();
+            }
+
+            // pull (selection, or current row when nothing is selected)
+            KeyCode::Char('p') => {
+                let targets = self.pull_targets();
+                if targets.is_empty() {
+                    self.note_warn("⚠ nothing to pull (need a repo:tag)");
+                } else {
+                    let title = if targets.len() == 1 {
+                        format!("Pull {}", targets[0])
+                    } else {
+                        format!("Pull {} images", targets.len())
+                    };
+                    let (rx, handle) = spawn_image_pull(self.docker.clone(), targets);
+                    self.pull.start(title, rx, handle);
+                    self.note_ok("⏬ pulling…");
+                }
+            }
+
             // export visible list
             KeyCode::Char('S') => match self.save_visible_to_tmp() {
                 Ok(p) => self.note_ok(format!("💾 images saved: {}", p.display())),
@@ -269,6 +332,24 @@ impl ImagesView {
         let id = img.id.clone();
         let name = image_name(img);
         Some((id, name))
+    }
+
+    fn pull_targets(&self) -> Vec<String> {
+        if !self.selected_ids.is_empty() {
+            self.rows
+                .iter()
+                .filter(|img| self.selected_ids.contains(&img.id))
+                .filter_map(pullable_ref)
+                .collect()
+        } else {
+            self.state
+                .selected()
+                .and_then(|idx| self.visible_indices().get(idx).copied())
+                .and_then(|row_idx| self.rows.get(row_idx))
+                .and_then(pullable_ref)
+                .into_iter()
+                .collect()
+        }
     }
 
     fn cycle_sort(&mut self) {
@@ -362,9 +443,15 @@ impl ImagesView {
         let mut spans = vec![Span::raw(" ")];
         spans.extend(title_line.spans.clone());
         spans.push(Span::raw(
-            "  j/k ↑/↓ • /: search • a: all/dangling • o/O: sort • r/F5: refresh • i: inspect • d: delete • S: save",
+            "  j/k ↑/↓ • /: search • a: all/dangling • o/O: sort • r/F5: refresh • i: inspect • d: delete • x: select • p: pull • S: save",
         ));
 
+        if !self.selected_ids.is_empty() {
+            spans.push(Span::styled(
+                format!(" | selected: {}", self.selected_ids.len()),
+                Style::default().fg(theme.accent),
+            ));
+        }
         if !self.query.is_empty() {
             spans.push(Span::styled(
                 format!(" | filter: '{}'", self.query),
@@ -404,7 +491,12 @@ impl ImagesView {
         let rows = vis.iter().enumerate().map(|(i, &idx)| {
             let img = &self.rows[idx];
 
-            let name = image_name(img);
+            let checkbox = if self.selected_ids.contains(&img.id) {
+                "▣ "
+            } else {
+                "▢ "
+            };
+            let name = format!("{checkbox}{}", image_name(img));
             let size_txt = human_size(img.size);
             let created_txt = format_created_full(img.created);
             let id_short = truncate_middle(&img.id, 20);
@@ -504,6 +596,9 @@ impl ImagesView {
             let para = Paragraph::new(Text::raw(msg)).wrap(Wrap { trim: false });
             f.render_widget(para, inner);
         }
+
+        // PULL PROGRESS (drawn last so it sits on top)
+        self.pull.draw(f, area, self.theme, self.tick);
     }
 }
 
@@ -514,6 +609,13 @@ fn image_name(img: &ImageSummary) -> String {
         return truncate_middle(&img.repo_tags[0], 42);
     }
     "<none>:<none>".into()
+}
+
+fn pullable_ref(img: &ImageSummary) -> Option<String> {
+    img.repo_tags
+        .iter()
+        .find(|t| !t.is_empty() && !t.starts_with("<none>"))
+        .cloned()
 }
 
 fn match_visible(img: &ImageSummary, tokens: &[String], dangling_only: bool) -> bool {

@@ -14,6 +14,7 @@ pub mod containers;
 pub use containers::ContainersView;
 
 mod logs;
+pub mod pull;
 pub mod splash;
 mod stats;
 pub use logs::LogsPane;
@@ -107,10 +108,10 @@ impl Ui {
         self.logs.visible
             || self.stats.visible
             || self.containers.is_modal_open()
+            || self.images.is_modal_open()
             || self.networks.is_modal_open()
             || self.compose.is_modal_open()
             || self.volumes.is_modal_open()
-        // ImagesView currently has no modal, so it is not included here.
     }
 
     pub async fn on_tick(&mut self) -> anyhow::Result<()> {
@@ -155,6 +156,10 @@ impl Ui {
         // 1) if a view has its own modal open, it gets priority
         if self.containers.has_modal() {
             self.containers.on_key(key).await?;
+            return Ok(());
+        }
+        if self.images.has_modal() {
+            self.images.on_key(key).await?;
             return Ok(());
         }
         if self.networks.has_modal() {
@@ -297,7 +302,7 @@ impl Ui {
             Tab::Images => String::from(
                 "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
                  • /: search • a: all/dangling • o/O: sort • r/F5: refresh \
-                 • i: inspect • d: delete • S: save visible list",
+                 • i: inspect • d: delete • x: select • C: clear • p: pull • S: save visible list",
             ),
             Tab::Networks => String::from(
                 "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
@@ -306,7 +311,7 @@ impl Ui {
             ),
             Tab::Compose => String::from(
                 "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
-                 • /: search • r/F5: rescan • u: up -d • d: down • s: ps • l: logs",
+                 • /: search • r/F5: rescan • u: up -d • d: down • p: pull • s: ps • l: logs",
             ),
             Tab::Volumes => String::from(
                 "q: quit • esc: back/close popup • 1–5/Tab: switch tabs • j/k: move \
