@@ -17,7 +17,7 @@ use ratatui::{
 use chrono::{TimeZone, Utc};
 
 use crate::ui::containers;
-use crate::ui::pull::{PullPopup, spawn_image_pull};
+use crate::ui::pull::{PullPopup, spawn_image_pull, spawn_op};
 use crate::{docker::DockerClient, theme::Theme};
 use containers::util::{alt_row_style, grad_sweep, selected_row_style, truncate_middle};
 
@@ -32,6 +32,7 @@ enum SortKey {
 /// Popups used in the Images tab
 enum Popup {
     ConfirmDelete { id: String, name: String },
+    ConfirmPrune,
     Inspect(String),
 }
 
@@ -88,12 +89,12 @@ impl ImagesView {
         self.tick = self.tick.wrapping_add(1);
         self.pull.on_tick();
         if let Some(ok) = self.pull.take_finished() {
-            // New layers/tags may now exist locally: refresh the listing.
+            // A pull/prune/delete just finished: the listing may have changed.
             let _ = futures_lite::future::block_on(self.refresh());
             if ok {
-                self.note_ok("✅ pull complete");
+                self.note_ok("✅ done");
             } else {
-                self.note_err("❌ pull finished with errors");
+                self.note_err("❌ operation failed");
             }
         }
     }
@@ -142,13 +143,36 @@ impl ImagesView {
                         self.popup = None;
                     }
                     KeyCode::Enter | KeyCode::Char('y') => {
-                        let (id, name) =
-                            if let Some(Popup::ConfirmDelete { id, name }) = self.popup.take() {
-                                (id, name)
-                            } else {
-                                return Ok(());
-                            };
-                        self.delete_image(&id, &name).await?;
+                        if let Some(Popup::ConfirmDelete { id, name }) = self.popup.take() {
+                            let docker = self.docker.clone();
+                            let label = name.clone();
+                            let (rx, handle) =
+                                spawn_op(format!("🗑 Deleting {name}…"), async move {
+                                    docker
+                                        .remove_image(&id, true, false)
+                                        .await
+                                        .map(|_| format!("deleted {label}"))
+                                });
+                            self.pull.start(format!("Delete {name}"), rx, handle);
+                        }
+                    }
+                    _ => {}
+                },
+                Popup::ConfirmPrune => match key.code {
+                    KeyCode::Esc | KeyCode::Char('n') => {
+                        self.popup = None;
+                    }
+                    KeyCode::Enter | KeyCode::Char('y') => {
+                        self.popup = None;
+                        let docker = self.docker.clone();
+                        let (rx, handle) =
+                            spawn_op("🧹 Pruning dangling images…".into(), async move {
+                                docker
+                                    .prune_images()
+                                    .await
+                                    .map(|_| "pruned dangling images".to_string())
+                            });
+                        self.pull.start("Prune images", rx, handle);
                     }
                     _ => {}
                 },
@@ -282,6 +306,11 @@ impl ImagesView {
                 }
             }
 
+            // prune dangling images
+            KeyCode::Char('X') => {
+                self.popup = Some(Popup::ConfirmPrune);
+            }
+
             // export visible list
             KeyCode::Char('S') => match self.save_visible_to_tmp() {
                 Ok(p) => self.note_ok(format!("💾 images saved: {}", p.display())),
@@ -291,19 +320,6 @@ impl ImagesView {
             _ => {}
         }
 
-        Ok(())
-    }
-
-    async fn delete_image(&mut self, id: &str, name: &str) -> Result<()> {
-        match self.docker.remove_image(id, true, false).await {
-            Ok(_) => {
-                self.note_ok(format!("🗑 deleted: {name}"));
-                let _ = self.refresh().await;
-            }
-            Err(e) => {
-                self.note_err(format!("❌ delete image: {e}"));
-            }
-        }
         Ok(())
     }
 
@@ -449,7 +465,7 @@ impl ImagesView {
         let mut spans = vec![Span::raw(" ")];
         spans.extend(title_line.spans.clone());
         spans.push(Span::raw(
-            "  a: all/dangling • o/O: sort • i: inspect • x: select • C: clear • p: pull • d: delete • S: save",
+            "  a: all/dangling • o/O: sort • i: inspect • x: select • C: clear • p: pull • d: delete • X: prune • S: save",
         ));
 
         if !self.selected_ids.is_empty() {
@@ -593,6 +609,33 @@ impl ImagesView {
             f.render_widget(block, overlay);
 
             let msg = format!("Confirm deletion of image `{name}` ?");
+            let para = Paragraph::new(Text::raw(msg)).wrap(Wrap { trim: false });
+            f.render_widget(para, inner);
+        }
+
+        if let Some(Popup::ConfirmPrune) = &self.popup {
+            let w = (area.width / 2).max(48);
+            let h = 7u16;
+            let overlay = Rect {
+                x: area.x + (area.width - w) / 2,
+                y: area.y + (area.height - h) / 2,
+                width: w,
+                height: h,
+            };
+            f.render_widget(Clear, overlay);
+            let inner = Rect {
+                x: overlay.x + 1,
+                y: overlay.y + 1,
+                width: overlay.width - 2,
+                height: overlay.height - 2,
+            };
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(self.theme.title("Prune dangling images? (y/n/esc)"))
+                .border_style(Style::default().fg(self.theme.warn));
+            f.render_widget(block, overlay);
+
+            let msg = "Remove all dangling (untagged) images?";
             let para = Paragraph::new(Text::raw(msg)).wrap(Wrap { trim: false });
             f.render_widget(para, inner);
         }

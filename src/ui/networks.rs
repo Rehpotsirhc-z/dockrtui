@@ -11,6 +11,7 @@ use ratatui::{
 };
 
 use crate::ui::containers;
+use crate::ui::pull::{PullPopup, spawn_op};
 use crate::{docker::DockerClient, theme::Theme};
 use containers::util::{alt_row_style, grad_sweep, selected_row_style, truncate_middle};
 
@@ -25,6 +26,7 @@ enum SortKey {
 /// Popups for the networks tab
 enum Popup {
     ConfirmDelete { id: String, name: String },
+    ConfirmPrune,
     Inspect(String),
 }
 
@@ -57,6 +59,7 @@ pub struct NetworksView {
     sort_asc: bool,
 
     popup: Option<Popup>,
+    pull: PullPopup,
 }
 
 impl NetworksView {
@@ -75,6 +78,7 @@ impl NetworksView {
             sort_key: SortKey::Name,
             sort_asc: true,
             popup: None,
+            pull: PullPopup::new(),
         };
         s.refresh().await?;
         Ok(s)
@@ -82,10 +86,19 @@ impl NetworksView {
 
     pub fn on_tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
+        self.pull.on_tick();
+        if let Some(ok) = self.pull.take_finished() {
+            let _ = futures_lite::future::block_on(self.refresh());
+            if ok {
+                self.note_ok("✅ done");
+            } else {
+                self.note_err("❌ operation failed");
+            }
+        }
     }
 
     pub fn is_modal_open(&self) -> bool {
-        self.popup.is_some() || self.searching
+        self.popup.is_some() || self.searching || self.pull.visible
     }
 
     /// Match Ui API (like ContainersView)
@@ -127,6 +140,12 @@ impl NetworksView {
     }
 
     pub async fn on_key(&mut self, key: KeyEvent) -> Result<()> {
+        // 0) progress popup owns the keyboard while visible
+        if self.pull.visible {
+            self.pull.on_key(key);
+            return Ok(());
+        }
+
         // 1) popup visible
         if let Some(p) = &mut self.popup {
             match p {
@@ -142,6 +161,24 @@ impl NetworksView {
                                 return Ok(());
                             };
                         self.delete_network(&id, &name).await?;
+                    }
+                    _ => {}
+                },
+                Popup::ConfirmPrune => match key.code {
+                    KeyCode::Esc | KeyCode::Char('n') => {
+                        self.popup = None;
+                    }
+                    KeyCode::Enter | KeyCode::Char('y') => {
+                        self.popup = None;
+                        let docker = self.docker.clone();
+                        let (rx, handle) =
+                            spawn_op("🧹 Pruning unused networks…".into(), async move {
+                                docker
+                                    .prune_networks()
+                                    .await
+                                    .map(|_| "pruned unused networks".to_string())
+                            });
+                        self.pull.start("Prune networks", rx, handle);
                     }
                     _ => {}
                 },
@@ -241,6 +278,11 @@ impl NetworksView {
                 } else {
                     self.note_warn("⚠ no network selected");
                 }
+            }
+
+            // prune unused networks
+            KeyCode::Char('X') => {
+                self.popup = Some(Popup::ConfirmPrune);
             }
 
             _ => {}
@@ -365,7 +407,7 @@ impl NetworksView {
         let mut spans = vec![Span::raw(" ")];
         spans.extend(title_line.spans.clone());
         spans.push(Span::raw(
-            "  a: all/user • o/O: sort • i: inspect • d: delete",
+            "  a: all/user • o/O: sort • i: inspect • d: delete • X: prune unused",
         ));
 
         if !self.query.is_empty() {
@@ -504,6 +546,36 @@ impl NetworksView {
             let para = Paragraph::new(Text::raw(msg)).wrap(Wrap { trim: false });
             f.render_widget(para, inner);
         }
+
+        if let Some(Popup::ConfirmPrune) = &self.popup {
+            let w = (area.width / 2).max(48);
+            let h = 7u16;
+            let overlay = Rect {
+                x: area.x + (area.width - w) / 2,
+                y: area.y + (area.height - h) / 2,
+                width: w,
+                height: h,
+            };
+            f.render_widget(Clear, overlay);
+            let inner = Rect {
+                x: overlay.x + 1,
+                y: overlay.y + 1,
+                width: overlay.width - 2,
+                height: overlay.height - 2,
+            };
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(self.theme.title("Prune unused networks? (y/n/esc)"))
+                .border_style(Style::default().fg(self.theme.warn));
+            f.render_widget(block, overlay);
+
+            let msg = "Remove all networks not used by any container?";
+            let para = Paragraph::new(Text::raw(msg)).wrap(Wrap { trim: false });
+            f.render_widget(para, inner);
+        }
+
+        // progress popup (drawn last so it sits on top)
+        self.pull.draw(f, area, self.theme, self.tick);
     }
 }
 

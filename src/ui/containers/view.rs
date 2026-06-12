@@ -19,6 +19,7 @@ use super::progress::fancy_bar_line;
 use super::rocket::{render_rocket_scene_vertical, rocket_down_from_bar, rocket_up_from_bar};
 use super::shell::{ShellEvent, ShellPopup};
 use super::util::{alt_row_style, grad_sweep, lerp, selected_row_style, truncate_middle};
+use crate::ui::pull::{PullPopup, spawn_op};
 
 /// Available sort keys
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,6 +34,7 @@ enum SortKey {
 enum Popup {
     Inspect(String),
     ConfirmDelete { items: Vec<(String, String)> },
+    ConfirmPrune,
 }
 
 pub struct ContainersView {
@@ -67,6 +69,9 @@ pub struct ContainersView {
     // popups
     popup: Option<Popup>,
 
+    // async progress popup for prune / delete
+    pull: PullPopup,
+
     // integrated shell
     shell: Option<ShellPopup>,
 }
@@ -91,6 +96,7 @@ impl ContainersView {
             selected_ids: HashSet::new(),
             queue: VecDeque::new(),
             popup: None,
+            pull: PullPopup::new(),
 
             shell: None,
         };
@@ -118,48 +124,24 @@ impl ContainersView {
     }
 
     pub fn is_modal_open(&self) -> bool {
-        self.shell.is_some() || self.popup.is_some() || self.searching
+        self.shell.is_some() || self.popup.is_some() || self.searching || self.pull.visible
     }
 
     pub fn has_modal(&self) -> bool {
-        self.shell.is_some() || self.popup.is_some()
+        self.shell.is_some() || self.popup.is_some() || self.pull.visible
     }
 
     pub fn selected_id(&self) -> Option<String> {
         self.current().map(|(id, _name, _state)| id.to_string())
     }
 
-    async fn remove_ids(&mut self, items: Vec<(String, String)>) -> Result<()> {
-        if items.is_empty() {
+    pub async fn on_key(&mut self, key: KeyEvent) -> Result<()> {
+        // 0) progress popup (prune/delete) owns the keyboard while visible
+        if self.pull.visible {
+            self.pull.on_key(key);
             return Ok(());
         }
 
-        let mut ok = 0usize;
-        let mut ko: Vec<String> = vec![];
-
-        for (id, name) in items {
-            // force + volumes
-            match self.docker.remove(&id, true, true).await {
-                Ok(_) => {
-                    ok += 1;
-                }
-                Err(e) => {
-                    ko.push(format!("{name} ({e})"));
-                }
-            }
-        }
-
-        let _ = self.refresh().await;
-        if ok > 0 {
-            self.note_ok(format!("🗑 removed: {ok}"));
-        }
-        if !ko.is_empty() {
-            self.note_err(format!("❌ failed: {}", ko.join(", ")));
-        }
-        Ok(())
-    }
-
-    pub async fn on_key(&mut self, key: KeyEvent) -> Result<()> {
         // 0) if shell is open, it has priority
         if let Some(shell) = &mut self.shell {
             match shell.on_key(key)? {
@@ -188,7 +170,46 @@ impl ContainersView {
                         } else {
                             vec![]
                         };
-                        self.remove_ids(items).await?;
+                        if !items.is_empty() {
+                            let docker = self.docker.clone();
+                            let n = items.len();
+                            let (rx, handle) =
+                                spawn_op(format!("🗑 Removing {n} container(s)…"), async move {
+                                    let mut ok = 0usize;
+                                    let mut ko: Vec<String> = vec![];
+                                    for (id, name) in items {
+                                        match docker.remove(&id, true, true).await {
+                                            Ok(_) => ok += 1,
+                                            Err(e) => ko.push(format!("{name} ({e})")),
+                                        }
+                                    }
+                                    if ko.is_empty() {
+                                        Ok(format!("removed {ok}"))
+                                    } else {
+                                        Err(anyhow::anyhow!(
+                                            "removed {ok}, failed: {}",
+                                            ko.join(", ")
+                                        ))
+                                    }
+                                });
+                            self.pull.start("Remove containers", rx, handle);
+                        }
+                    }
+                    _ => {}
+                },
+                Popup::ConfirmPrune => match key.code {
+                    KeyCode::Esc | KeyCode::Char('n') => self.popup = None,
+                    KeyCode::Enter | KeyCode::Char('y') => {
+                        self.popup = None;
+                        let docker = self.docker.clone();
+                        let (rx, handle) =
+                            spawn_op("🧹 Pruning stopped containers…".into(), async move {
+                                docker
+                                    .prune_containers()
+                                    .await
+                                    .map(|_| "pruned stopped containers".to_string())
+                            });
+                        self.pull.start("Prune containers", rx, handle);
                     }
                     _ => {}
                 },
@@ -492,6 +513,11 @@ impl ContainersView {
                 }
             }
 
+            // prune stopped containers
+            KeyCode::Char('X') => {
+                self.popup = Some(Popup::ConfirmPrune);
+            }
+
             _ => {}
         }
         Ok(())
@@ -499,6 +525,17 @@ impl ContainersView {
 
     pub fn on_tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
+
+        // drain the async prune/delete progress popup
+        self.pull.on_tick();
+        if let Some(ok) = self.pull.take_finished() {
+            let _ = futures_lite::future::block_on(self.refresh());
+            if ok {
+                self.note_ok("✅ done");
+            } else {
+                self.note_err("❌ operation failed");
+            }
+        }
 
         // If no animation is active, start the next queued action (start/stop)
         if self.anim.is_none()
@@ -637,7 +674,7 @@ impl ContainersView {
         let mut hint = vec![Span::raw(" ")];
         hint.extend(title_line.spans);
         hint.push(Span::raw(
-            "  a: all/running • o/O: sort • space/↵: start/stop • R: restart • p/P: pause • b: shell • x: select • A: apply • C: clear • i: inspect • l: logs • t: stats • S: save • d/D: delete "
+            "  a: all/running • o/O: sort • space/↵: start/stop • R: restart • p/P: pause • b: shell • x: select • A: apply • C: clear • i: inspect • l: logs • t: stats • S: save • d/D: delete • X: prune "
         ));
         if !self.query.is_empty() {
             hint.push(Span::styled(
@@ -923,10 +960,41 @@ impl ContainersView {
             f.render_widget(para, inner);
         }
 
+        // ---------- POPUP CONFIRM PRUNE ----------
+        if let Some(Popup::ConfirmPrune) = &self.popup {
+            let w = (area.width / 2).max(48);
+            let h = 8u16;
+            let overlay = Rect {
+                x: area.x + (area.width - w) / 2,
+                y: area.y + (area.height - h) / 2,
+                width: w,
+                height: h,
+            };
+            f.render_widget(Clear, overlay);
+            let inner = Rect {
+                x: overlay.x + 1,
+                y: overlay.y + 1,
+                width: overlay.width - 2,
+                height: overlay.height - 2,
+            };
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(self.theme.title("Prune stopped containers? (y/n/esc)"))
+                .border_style(Style::default().fg(self.theme.warn));
+            f.render_widget(block, overlay);
+
+            let msg = "Remove all stopped containers?";
+            let para = Paragraph::new(Text::raw(msg)).wrap(Wrap { trim: false });
+            f.render_widget(para, inner);
+        }
+
         // ---------- SHELL POPUP ----------
         if let Some(shell) = &self.shell {
             shell.draw(f, area, self.tick);
         }
+
+        // ---------- ASYNC PROGRESS POPUP (prune / delete) ----------
+        self.pull.draw(f, area, self.theme, self.tick);
     }
 
     // =============== Helpers =================

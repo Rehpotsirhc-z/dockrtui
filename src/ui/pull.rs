@@ -17,6 +17,7 @@
 //! back over a channel, so the UI never blocks.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::PathBuf;
 use std::process::Stdio;
 
@@ -532,6 +533,48 @@ fn utf8_len(b: u8) -> usize {
 }
 
 /* ============================== producers ============================== */
+
+/// Run a single async operation (prune, delete, …) in the progress popup. Shows
+/// `start_line` with a spinner while it runs, then a ✅/❌ summary line. The
+/// future returns a short human summary used on success. Use this for any
+/// daemon call that isn't instant so it never blocks the render loop.
+pub fn spawn_op<F>(start_line: String, fut: F) -> (UnboundedReceiver<PullEvent>, JoinHandle<()>)
+where
+    F: Future<Output = anyhow::Result<String>> + Send + 'static,
+{
+    let (tx, rx) = mpsc::unbounded_channel();
+    let handle = tokio::spawn(async move {
+        let _ = tx.send(PullEvent::Line {
+            key: None,
+            text: start_line,
+        });
+        match fut.await {
+            Ok(summary) => {
+                let summary = if summary.is_empty() {
+                    "done".to_string()
+                } else {
+                    summary
+                };
+                let _ = tx.send(PullEvent::Line {
+                    key: None,
+                    text: format!("✅ {summary}"),
+                });
+                let _ = tx.send(PullEvent::Done { ok: true, summary });
+            }
+            Err(e) => {
+                let _ = tx.send(PullEvent::Line {
+                    key: None,
+                    text: format!("❌ {e}"),
+                });
+                let _ = tx.send(PullEvent::Done {
+                    ok: false,
+                    summary: "failed".into(),
+                });
+            }
+        }
+    });
+    (rx, handle)
+}
 
 /// Spawn a background task that pulls `images` one after another and reports
 /// progress. Layer-progress lines are keyed by their layer id so they collapse

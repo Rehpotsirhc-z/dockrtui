@@ -223,6 +223,41 @@ impl DockerClient {
         self.inner.remove_network(id).await?;
         Ok(())
     }
+
+    pub async fn prune_networks(&self) -> Result<()> {
+        use bollard::query_parameters::{PruneNetworksOptions, PruneNetworksOptionsBuilder};
+        use std::collections::HashMap;
+        let filters: HashMap<String, Vec<String>> = HashMap::new();
+        let opts: PruneNetworksOptions = PruneNetworksOptionsBuilder::default()
+            .filters(&filters)
+            .build();
+        self.inner.prune_networks(Some(opts)).await?;
+        Ok(())
+    }
+
+    // ================== PRUNE (containers / images) ==================
+
+    pub async fn prune_containers(&self) -> Result<()> {
+        use bollard::query_parameters::{PruneContainersOptions, PruneContainersOptionsBuilder};
+        use std::collections::HashMap;
+        let filters: HashMap<String, Vec<String>> = HashMap::new();
+        let opts: PruneContainersOptions = PruneContainersOptionsBuilder::default()
+            .filters(&filters)
+            .build();
+        self.inner.prune_containers(Some(opts)).await?;
+        Ok(())
+    }
+
+    pub async fn prune_images(&self) -> Result<()> {
+        use bollard::query_parameters::{PruneImagesOptions, PruneImagesOptionsBuilder};
+        use std::collections::HashMap;
+        let filters: HashMap<String, Vec<String>> = HashMap::new();
+        let opts: PruneImagesOptions = PruneImagesOptionsBuilder::default()
+            .filters(&filters)
+            .build();
+        self.inner.prune_images(Some(opts)).await?;
+        Ok(())
+    }
 }
 
 fn resolve_docker_socket_path() -> Result<String> {

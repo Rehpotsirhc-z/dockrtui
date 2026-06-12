@@ -12,6 +12,7 @@ use ratatui::{
 };
 
 use crate::ui::containers;
+use crate::ui::pull::{PullPopup, spawn_op};
 use crate::{docker::DockerClient, theme::Theme};
 use containers::util::{alt_row_style, grad_sweep, selected_row_style, truncate_middle};
 
@@ -50,6 +51,7 @@ pub struct VolumesView {
     sort_asc: bool,
 
     popup: Option<Popup>,
+    pull: PullPopup,
 }
 
 impl VolumesView {
@@ -67,6 +69,7 @@ impl VolumesView {
             sort_key: SortKey::Name,
             sort_asc: true,
             popup: None,
+            pull: PullPopup::new(),
         };
         s.refresh().await?;
         Ok(s)
@@ -74,10 +77,19 @@ impl VolumesView {
 
     pub fn on_tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
+        self.pull.on_tick();
+        if let Some(ok) = self.pull.take_finished() {
+            let _ = futures_lite::future::block_on(self.refresh());
+            if ok {
+                self.note_ok("✅ done");
+            } else {
+                self.note_err("❌ operation failed");
+            }
+        }
     }
 
     pub fn is_modal_open(&self) -> bool {
-        self.popup.is_some() || self.searching
+        self.popup.is_some() || self.searching || self.pull.visible
     }
 
     pub fn has_modal(&self) -> bool {
@@ -105,6 +117,12 @@ impl VolumesView {
     }
 
     pub async fn on_key(&mut self, key: KeyEvent) -> Result<()> {
+        // 0) progress popup owns the keyboard while visible
+        if self.pull.visible {
+            self.pull.on_key(key);
+            return Ok(());
+        }
+
         // 1) popup open -> it has priority
         if let Some(p) = &mut self.popup {
             match p {
@@ -128,7 +146,15 @@ impl VolumesView {
                     }
                     KeyCode::Enter | KeyCode::Char('y') => {
                         self.popup = None;
-                        self.prune_volumes().await?;
+                        let docker = self.docker.clone();
+                        let (rx, handle) =
+                            spawn_op("🧹 Pruning unused volumes…".into(), async move {
+                                docker
+                                    .prune_volumes()
+                                    .await
+                                    .map(|_| "pruned unused volumes".to_string())
+                            });
+                        self.pull.start("Prune volumes", rx, handle);
                     }
                     _ => {}
                 },
@@ -222,8 +248,8 @@ impl VolumesView {
                 }
             }
 
-            // prune
-            KeyCode::Char('p') => {
+            // prune unused
+            KeyCode::Char('X') => {
                 self.popup = Some(Popup::ConfirmPrune);
             }
 
@@ -240,19 +266,6 @@ impl VolumesView {
             }
             Err(e) => {
                 self.note_err(format!("❌ delete failed: {e}"));
-            }
-        }
-        Ok(())
-    }
-
-    async fn prune_volumes(&mut self) -> Result<()> {
-        match self.docker.prune_volumes().await {
-            Ok(_) => {
-                self.note_ok("🧹 unused volumes pruned");
-                let _ = self.refresh().await;
-            }
-            Err(e) => {
-                self.note_err(format!("❌ prune failed: {e}"));
             }
         }
         Ok(())
@@ -361,7 +374,7 @@ impl VolumesView {
         let mut spans = vec![Span::raw(" ")];
         spans.extend(title_line.spans.clone());
         spans.push(Span::raw(
-            "  o/O: sort • i: inspect • d: delete • p: prune unused",
+            "  o/O: sort • i: inspect • d: delete • X: prune unused",
         ));
         if !self.query.is_empty() {
             spans.push(Span::styled(
@@ -458,6 +471,9 @@ impl VolumesView {
         if self.searching {
             self.draw_search(f, area);
         }
+
+        // progress popup (drawn last so it sits on top)
+        self.pull.draw(f, area, self.theme, self.tick);
     }
 
     fn draw_confirm_delete(&self, f: &mut Frame, area: Rect, name: &str) {
