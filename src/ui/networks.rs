@@ -10,6 +10,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
 };
 
+use crate::ui::confirm_prompt;
 use crate::ui::containers;
 use crate::ui::pull::{PullPopup, spawn_op};
 use crate::{docker::DockerClient, theme::Theme};
@@ -521,57 +522,61 @@ impl NetworksView {
         }
 
         if let Some(Popup::ConfirmDelete { id: _, name }) = &self.popup {
-            let w = (area.width / 2).max(48);
-            let h = 7u16;
+            let w = 60.min(area.width);
+            let h = 8u16;
             let overlay = Rect {
-                x: area.x + (area.width - w) / 2,
-                y: area.y + (area.height - h) / 2,
+                x: area.x + (area.width.saturating_sub(w)) / 2,
+                y: area.y + (area.height.saturating_sub(h)) / 2,
                 width: w,
                 height: h,
             };
             f.render_widget(Clear, overlay);
-            let inner = Rect {
-                x: overlay.x + 1,
-                y: overlay.y + 1,
-                width: overlay.width - 2,
-                height: overlay.height - 2,
-            };
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .title(self.theme.title("Delete network? (y/n/esc)"))
-                .border_style(Style::default().fg(self.theme.err));
-            f.render_widget(block, overlay);
 
-            let msg = format!("Confirm deletion of network `{name}`?");
-            let para = Paragraph::new(Text::raw(msg)).wrap(Wrap { trim: false });
-            f.render_widget(para, inner);
+            let block = Block::default()
+                .title(self.theme.title(" Confirm Delete "))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(self.theme.err));
+
+            let lines = vec![
+                Line::from(format!("Delete network: {name}?")),
+                Line::from(""),
+                confirm_prompt(self.theme),
+            ];
+            let para = Paragraph::new(lines)
+                .block(block)
+                .wrap(Wrap { trim: true })
+                .style(Style::default().fg(self.theme.fg));
+            f.render_widget(para, overlay);
         }
 
         if let Some(Popup::ConfirmPrune) = &self.popup {
-            let w = (area.width / 2).max(48);
-            let h = 7u16;
+            let w = 60.min(area.width);
+            let h = 8u16;
             let overlay = Rect {
-                x: area.x + (area.width - w) / 2,
-                y: area.y + (area.height - h) / 2,
+                x: area.x + (area.width.saturating_sub(w)) / 2,
+                y: area.y + (area.height.saturating_sub(h)) / 2,
                 width: w,
                 height: h,
             };
             f.render_widget(Clear, overlay);
-            let inner = Rect {
-                x: overlay.x + 1,
-                y: overlay.y + 1,
-                width: overlay.width - 2,
-                height: overlay.height - 2,
-            };
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .title(self.theme.title("Prune unused networks? (y/n/esc)"))
-                .border_style(Style::default().fg(self.theme.warn));
-            f.render_widget(block, overlay);
 
-            let msg = "Remove all networks not used by any container?";
-            let para = Paragraph::new(Text::raw(msg)).wrap(Wrap { trim: false });
-            f.render_widget(para, inner);
+            let block = Block::default()
+                .title(self.theme.title(" Confirm Prune "))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(self.theme.warn));
+
+            let lines = vec![
+                Line::from("Prune all unused networks?"),
+                Line::from(""),
+                Line::from("This will remove networks not used by any container."),
+                Line::from(""),
+                confirm_prompt(self.theme),
+            ];
+            let para = Paragraph::new(lines)
+                .block(block)
+                .wrap(Wrap { trim: true })
+                .style(Style::default().fg(self.theme.fg));
+            f.render_widget(para, overlay);
         }
 
         // progress popup (drawn last so it sits on top)

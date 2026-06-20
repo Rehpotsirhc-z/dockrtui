@@ -11,6 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
 };
 
+use crate::ui::confirm_prompt;
 use crate::ui::containers;
 use crate::ui::pull::{PullPopup, spawn_op};
 use crate::{docker::DockerClient, theme::Theme};
@@ -495,11 +496,12 @@ impl VolumesView {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(self.theme.warn));
 
-        let text = format!(
-            "Delete volume: {}?\n\nPress [y] to confirm, [n] to cancel",
-            name
-        );
-        let para = Paragraph::new(text)
+        let lines = vec![
+            Line::from(format!("Delete volume: {name}?")),
+            Line::from(""),
+            confirm_prompt(self.theme),
+        ];
+        let para = Paragraph::new(lines)
             .block(block)
             .wrap(Wrap { trim: true })
             .style(Style::default().fg(self.theme.fg));
@@ -526,8 +528,14 @@ impl VolumesView {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(self.theme.warn));
 
-        let text = "Prune all unused volumes?\n\nThis will remove volumes not referenced by any container.\n\nPress [y] to confirm, [n] to cancel";
-        let para = Paragraph::new(text)
+        let lines = vec![
+            Line::from("Prune all unused volumes?"),
+            Line::from(""),
+            Line::from("This will remove volumes not referenced by any container."),
+            Line::from(""),
+            confirm_prompt(self.theme),
+        ];
+        let para = Paragraph::new(lines)
             .block(block)
             .wrap(Wrap { trim: true })
             .style(Style::default().fg(self.theme.fg));

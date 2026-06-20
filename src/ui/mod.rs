@@ -4,11 +4,28 @@ use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::Span,
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Tabs},
 };
 
 use crate::{docker::DockerClient, theme::Theme};
+
+/// Shared confirmation prompt line used by every prune/confirm dialog.
+/// Highlights the `[y]`, `[n]` and `[esc]` keys in the accent color.
+pub fn confirm_prompt(theme: Theme) -> Line<'static> {
+    let key = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
+    Line::from(vec![
+        Span::raw("Press "),
+        Span::styled("[y]", key),
+        Span::raw(" to confirm, "),
+        Span::styled("[n]", key),
+        Span::raw(" or "),
+        Span::styled("[esc]", key),
+        Span::raw(" to cancel"),
+    ])
+}
 
 pub mod containers;
 pub use containers::ContainersView;

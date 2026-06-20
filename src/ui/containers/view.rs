@@ -12,6 +12,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
 };
 
+use crate::ui::confirm_prompt;
 use crate::{docker::DockerClient, theme::Theme};
 
 use super::actions::{self, ActionAnim, ActionKind, BarPhase};
@@ -930,62 +931,67 @@ impl ContainersView {
 
         // ---------- POPUP CONFIRM DELETE ----------
         if let Some(Popup::ConfirmDelete { items }) = &self.popup {
-            let w = (area.width / 2).max(48);
+            let w = 60.min(area.width);
             let h = 8u16;
             let overlay = Rect {
-                x: area.x + (area.width - w) / 2,
-                y: area.y + (area.height - h) / 2,
+                x: area.x + (area.width.saturating_sub(w)) / 2,
+                y: area.y + (area.height.saturating_sub(h)) / 2,
                 width: w,
                 height: h,
             };
             f.render_widget(Clear, overlay);
-            let inner = Rect {
-                x: overlay.x + 1,
-                y: overlay.y + 1,
-                width: overlay.width - 2,
-                height: overlay.height - 2,
-            };
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .title(self.theme.title("Delete? (y/n/esc)"))
-                .border_style(Style::default().fg(self.theme.err));
-            f.render_widget(block, overlay);
 
-            let msg = if items.len() == 1 {
-                format!("Confirm deletion of {}?", items[0].1)
+            let block = Block::default()
+                .title(self.theme.title(" Confirm Delete "))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(self.theme.err));
+
+            let heading = if items.len() == 1 {
+                format!("Delete container: {}?", items[0].1)
             } else {
-                format!("Confirm deletion of {} containers?", items.len())
+                format!("Delete {} containers?", items.len())
             };
-            let para = Paragraph::new(Text::raw(msg)).wrap(Wrap { trim: false });
-            f.render_widget(para, inner);
+            let lines = vec![
+                Line::from(heading),
+                Line::from(""),
+                confirm_prompt(self.theme),
+            ];
+            let para = Paragraph::new(lines)
+                .block(block)
+                .wrap(Wrap { trim: true })
+                .style(Style::default().fg(self.theme.fg));
+            f.render_widget(para, overlay);
         }
 
         // ---------- POPUP CONFIRM PRUNE ----------
         if let Some(Popup::ConfirmPrune) = &self.popup {
-            let w = (area.width / 2).max(48);
+            let w = 60.min(area.width);
             let h = 8u16;
             let overlay = Rect {
-                x: area.x + (area.width - w) / 2,
-                y: area.y + (area.height - h) / 2,
+                x: area.x + (area.width.saturating_sub(w)) / 2,
+                y: area.y + (area.height.saturating_sub(h)) / 2,
                 width: w,
                 height: h,
             };
             f.render_widget(Clear, overlay);
-            let inner = Rect {
-                x: overlay.x + 1,
-                y: overlay.y + 1,
-                width: overlay.width - 2,
-                height: overlay.height - 2,
-            };
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .title(self.theme.title("Prune stopped containers? (y/n/esc)"))
-                .border_style(Style::default().fg(self.theme.warn));
-            f.render_widget(block, overlay);
 
-            let msg = "Remove all stopped containers?";
-            let para = Paragraph::new(Text::raw(msg)).wrap(Wrap { trim: false });
-            f.render_widget(para, inner);
+            let block = Block::default()
+                .title(self.theme.title(" Confirm Prune "))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(self.theme.warn));
+
+            let lines = vec![
+                Line::from("Prune all stopped containers?"),
+                Line::from(""),
+                Line::from("This will remove all stopped containers."),
+                Line::from(""),
+                confirm_prompt(self.theme),
+            ];
+            let para = Paragraph::new(lines)
+                .block(block)
+                .wrap(Wrap { trim: true })
+                .style(Style::default().fg(self.theme.fg));
+            f.render_widget(para, overlay);
         }
 
         // ---------- SHELL POPUP ----------
